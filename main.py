@@ -10,7 +10,7 @@ import datetime as dt
 
 import random
 import numpy as np
-from keras.layers import Dense, Flatten
+from keras.layers import Dense, Flatten, LSTM, Dropout
 from keras.models import Sequential
 from keras.optimizers import Adam
 from rl.agents import SARSAAgent
@@ -21,13 +21,30 @@ from env.BinanceEnv import BinanceEnv
 
 def agent(states, actions):
     model = Sequential()
-    model.add(Flatten(input_shape=(1, states)))
-    model.add(Dense(32, activation='relu'))
-    model.add(Dense(32, activation='relu'))
-    model.add(Dense(32, activation='relu'))
+    # model.add(Flatten(input_shape=(1, states)))
+    # model.add(Dense(32, activation='relu'))
+    # model.add(Dense(32, activation='relu'))
+    # model.add(Dense(32, activation='relu'))
+    # model.add(Dense(actions, activation='linear'))
+    # print(model.summary())
+
+    model.add(LSTM(units=200, return_sequences=True, input_shape=(1, states)))
+    model.add(Dropout(0.2))
+
+    model.add(LSTM(units=200, return_sequences=True))
+    model.add(Dropout(0.2))
+
+    model.add(LSTM(units=200, return_sequences=True))
+    model.add(Dropout(0.2))
+
+    model.add(LSTM(units=200))
+    model.add(Dropout(0.2))
+
     model.add(Dense(actions, activation='linear'))
     print(model.summary())
+
     return model
+
 
 def main():
     # binance = DataReader()
@@ -65,15 +82,15 @@ def main():
     #         score += reward
     #     print('episode {} score {}'.format(episode, score))
 
-
     model = agent(env.observation_space.shape[0], env.action_space.n)
     policy = EpsGreedyQPolicy()
     sarsa = SARSAAgent(model=model, policy=policy, nb_actions=env.action_space.n)
     sarsa.compile('adam', metrics=['mse'])
-    # sarsa.fit(env, nb_steps=50000, visualize=False, verbose=1)
-    # sarsa.save_weights('sarsa_weights_bnb_04.h5f', overwrite=True)
-    sarsa.load_weights('sarsa_weights_bnb_04.h5f')
-    scores = sarsa.test(env, nb_episodes=100, visualize=True)
+    sarsa.fit(env, nb_steps=10000, visualize=False, verbose=1)
+    sarsa.save_weights('sarsa_weights_bnb_06_1.h5f', overwrite=True)
+    # sarsa.load_weights('sarsa_weights_bnb_06.h5f')
+    # env.simulator = False
+    scores = sarsa.test(env, nb_episodes=100, visualize=False)
     print('Average score over 100 test games:{}'.format(np.mean(scores.history['episode_reward'])))
 
     _ = sarsa.test(env, nb_episodes=10, visualize=True)
@@ -82,6 +99,7 @@ def main():
         action, _states = model.predict(obs)
         obs, rewards, done, info = env.step(action)
         env.render()
+
 
 if __name__ == '__main__':
     main()

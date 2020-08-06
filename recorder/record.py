@@ -9,9 +9,9 @@ class Record:
     def __init__(self):
         self.con = psycopg2.connect(
             database="orderbook",
-            user="admin",
+            user="python",
             password="l82Z01vdQl",
-            host="127.0.0.1",
+            host="46.101.185.58",
             port="5432"
         )
         try:
@@ -35,7 +35,7 @@ class Record:
         data = {}
         while len(data) == 0:
             try:
-                data = self.client.get_recent_trades(symbol='BNBUSDT', limit=20)
+                data = self.client.get_recent_trades(symbol='BNBUSDT', limit=40)
             except Exception:
                 continue
             return data

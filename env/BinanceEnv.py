@@ -18,7 +18,7 @@ class BinanceEnv(gym.Env):
         super(BinanceEnv, self).__init__()
         self.action_space = spaces.Discrete(5)
         self.observation_space = spaces.Box(low=-1000, high=20000,
-                                            shape=(142,), dtype=np.float16)
+                                            shape=(84,), dtype=np.float16)
         self.binance = BinanceReader()
         self.simulator = Simulator()
         self.current_step = 0
@@ -27,18 +27,32 @@ class BinanceEnv(gym.Env):
     def next_observation(self):
         # Get the stock data points for the last 5 days and scale to between 0-1
         asks, bids = self.simulator.get_order_book()
+        data = list()
+        for item in asks:
+            data.append(item[1])
+        asks = np.asarray(data)
+        data = list()
+        for item in bids:
+            data.append(item[1])
+        bids = np.asarray(data)
         recent_trades = self.simulator.get_recent_trades()
+        data = list()
+        for item in recent_trades:
+            data.append([item[1], item[2]])
+        recent_trades = np.asarray(data)
         self.last_price = self.simulator.get_last_price()
-        # Append additional data and scale each value to between 0-1
+        max_short, max_long = self.simulator.get_max_short_and_long()
         obs = np.append(asks, bids)
         obs = np.append(obs, recent_trades)
         obs = np.append(obs, self.simulator.profit)
         obs = np.append(obs, self.simulator.balance)
+        obs = np.append(obs, np.asarray(max_long))
+        obs = np.append(obs, np.asarray(max_short))
         return obs
 
     def reset(self):
         self.simulator = Simulator()
-        self.current_step = random.randint(0, int(self.simulator.max_steps / 2))
+        self.current_step = random.randint(0, int(self.simulator.max_steps / 1.3))
         self.simulator.current_step = self.current_step
         return self.next_observation()
 
@@ -73,11 +87,9 @@ class BinanceEnv(gym.Env):
 
         self.current_step += 1
         self.simulator.current_step += 1
-
-        reward = float(self.simulator.profit)
+        reward = float(self.simulator.reward)
         done = False
-        if self.simulator.balance < 9000 or self.simulator.count_trades >= 500 \
-                or self.current_step + 1 == self.simulator.max_steps:
+        if self.simulator.reward < - 100 or self.current_step + 1 == self.simulator.max_steps:
             done = True
 
         obs = self.next_observation()
