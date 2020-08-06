@@ -15,7 +15,7 @@ class Simulator:
         self.count_trades = 0
         self.max_profit = 0.0
         self.max_down = 0.0
-        self.reward = -5.0
+        self.reward = 0.0
         self.current_price = 0.0
         self.commission = Decimal(0.00075)
         self.simulation = simulation
@@ -24,11 +24,14 @@ class Simulator:
         self.max_steps = 0
         self.states = list()
         self.recent_trades = list()
+        self.asks = list()
+        self.bids = list()
         self._connect()
         self.reset()
         self.binance = BinanceReader()
         self.get_last_price()
         self.get_account_info()
+        self.history_id = 0
 
     def _connect(self):
         self.con = psycopg2.connect(
@@ -36,13 +39,6 @@ class Simulator:
             user="admin",
             password="l82Z01vdQl",
             host="127.0.0.1",
-            port="5432"
-        )
-        self.con_server = psycopg2.connect(
-            database="orderbook",
-            user="python",
-            password="l82Z01vdQl",
-            host="46.101.185.58",
             port="5432"
         )
 
@@ -58,35 +54,41 @@ class Simulator:
         sql = 'TRUNCATE active_trades;'
         cur.execute("ROLLBACK")
         cur.execute(sql)
-        self.reward = -5.0
+        self.reward = 0.0
 
-    def add_trade_to_history(self, type, open_price, close_price, volume, profit):
+    def add_trade_to_history(self, type, open_price, close_price, volume, profit, max_profit):
         type = "'" + str(type) + "'"
         cur = self.con.cursor()
-        sql = 'insert into history (type, open_price, close_price, volume, profit) VALUES (' + str(
-            type) + ', ' + str(
-            open_price) + ', ' + str(close_price) + ', ' + str(volume) + ', ' + str(profit) + ');'
+        sql = 'insert into history (type, open_price, close_price, volume, profit, max_profit) VALUES (' + str(
+            type) + ', ' + str(open_price) + ', ' + str(close_price) + ', ' + str(volume) + ', ' + str(profit) + ', '\
+              + str(max_profit) + ');'
         cur.execute("ROLLBACK")
         cur.execute(sql)
 
     def get_history(self):
         cur = self.con.cursor()
-        sql = 'select profit from history;'
+        sql = 'select id, profit, max_profit from history order by id;'
         cur.execute("ROLLBACK")
         cur.execute(sql)
         return cur.fetchall()
 
     def get_award(self, profit):
-        if profit <= 0:
-            self.reward -= abs(float(profit))
-        else:
-            self.reward += float(profit)
-        sum_profit = 0.0
-        active_trades = self.get_active_trades()
-        if len(active_trades) > 0:
-            for item in active_trades:
-                sum_profit += float(item[4])
-            self.reward += sum_profit / len(active_trades)
+        # if profit <= 0:
+        #     self.reward -= abs(float(profit))
+        # else:
+        #     self.reward += float(profit)
+        # sum_profit = 0.0
+        # active_trades = self.get_active_trades()
+        # if len(active_trades) > 0:
+        #     for item in active_trades:
+        #         sum_profit += float(item[4])
+        #     self.reward += sum_profit / len(active_trades)
+        history = self.get_history()
+        if len(history) > 0:
+            if history[0][0] != self.history_id:
+                if float(history[0][2]) != 0:
+                    self.reward += float(history[0][1]) / float(history[0][2])
+                    self.history_id = history[0][0]
 
     def get_account_info(self):
         cur = self.con.cursor()
@@ -104,17 +106,25 @@ class Simulator:
         for item in active_trades:
             if item[1] == 'long':
                 profit = (last_price - item[2]) * item[3]
+                max_profit = item[5]
+                if profit > max_profit:
+                    max_profit = profit
                 # if profit < -1 or profit > 2:
                 #     self.close_long()
                 cur = self.con.cursor()
-                sql = 'update active_trades set profit = {0} where id = {1};'.format(profit, item[0])
+                sql = 'update active_trades set profit = {0}, max_profit = {1} where id = {2};'.\
+                    format(profit, max_profit, item[0])
                 cur.execute(sql)
             if item[1] == 'short':
+                max_profit = item[5]
                 profit = - (last_price - item[2]) * item[3]
+                if profit > max_profit:
+                    max_profit = profit
                 # if profit < -1 or profit > 2:
                 #     self.close_short()
                 cur = self.con.cursor()
-                sql = 'update active_trades set profit = {0} where id = {1};'.format(profit, item[0])
+                sql = 'update active_trades set profit = {0}, max_profit = {1} where id = {2};'\
+                    .format(profit, max_profit, item[0])
                 cur.execute(sql)
 
     def update_account(self):
@@ -166,8 +176,8 @@ class Simulator:
     def get_last_price(self):
         if self.simulation:
             if len(self.states) == 0:
-                cur = self.con_server.cursor()
-                sql = 'select * from states'
+                cur = self.con.cursor()
+                sql = 'select * from states limit 40000;'
                 cur.execute("ROLLBACK")
                 cur.execute(sql)
                 self.states = cur.fetchall()
@@ -180,7 +190,7 @@ class Simulator:
     def get_recent_trades(self):
         if self.simulation:
             if len(self.recent_trades) == 0:
-                cur = self.con_server.cursor()
+                cur = self.con.cursor()
                 sql = 'select price, volume, type_transaction, state_id from time_and_sales;'
                 cur.execute("ROLLBACK")
                 cur.execute(sql)
@@ -203,19 +213,40 @@ class Simulator:
 
     def get_order_book(self):
         if self.simulation:
-            cur = self.con_server.cursor()
-            sql = 'select price, volume from asks where state_id = {0};'.format(self.state_id)
-            cur.execute("ROLLBACK")
-            cur.execute(sql)
-            asks = cur.fetchall()
-
-            cur = self.con_server.cursor()
-            sql = 'select price, volume from bids where state_id = {0};'.format(self.state_id)
-            cur.execute("ROLLBACK")
-            cur.execute(sql)
-            bids = cur.fetchall()
-
-            return np.asarray(asks), np.asarray(bids)
+            if len(self.asks) == 0:
+                cur = self.con.cursor()
+                sql = 'select price, volume, state_id from asks;'
+                cur.execute("ROLLBACK")
+                cur.execute(sql)
+                data = cur.fetchall()
+                dict = {}
+                i = 0
+                for item in data:
+                    dict[i] = {
+                        'price': item[0],
+                        'volume': item[1],
+                        'state_id': item[2]
+                    }
+                    i += 1
+                self.asks = pd.DataFrame.from_dict(dict, 'index')
+            if len(self.bids) == 0:
+                cur = self.con.cursor()
+                sql = 'select price, volume, state_id from bids;'
+                cur.execute("ROLLBACK")
+                cur.execute(sql)
+                data = cur.fetchall()
+                dict = {}
+                i = 0
+                for item in data:
+                    dict[i] = {
+                        'price': item[0],
+                        'volume': item[1],
+                        'state_id': item[2]
+                    }
+                    i += 1
+                self.bids = pd.DataFrame.from_dict(dict, 'index')
+            return np.asarray(self.asks[self.asks['state_id'] == self.state_id][['price', 'volume']]), \
+                   np.asarray(self.bids[self.bids['state_id'] == self.state_id][['price', 'volume']])
         else:
             return np.asarray(self.binance.get_order_book())
 
@@ -226,8 +257,8 @@ class Simulator:
         transaction_type = "'long'"
         if self.available_balance >= trade_cost:
             cur = self.con.cursor()
-            sql = 'insert into active_trades (type, open_price, volume, profit) VALUES ({0}, {1}, {2}, {3});'.format(
-                transaction_type, last_price, volume, 0.0)
+            sql = 'insert into active_trades (type, open_price, volume, profit, max_profit) ' \
+                  'VALUES ({0}, {1}, {2}, {3}, {4});'.format(transaction_type, last_price, volume, 0.0, 0.0)
             cur.execute("ROLLBACK")
             cur.execute(sql)
 
@@ -258,8 +289,11 @@ class Simulator:
             cur.execute(sql)
             self.count_trades += 1
             self.update_account()
+            if close_trade[5] == 0:
+                a = 1
             self.add_trade_to_history('long', close_trade[2], last_price, close_trade[3],
-                                      profit - (commission + commission_open_trade))
+                                      profit - (commission + commission_open_trade),
+                                      close_trade[5] - (commission + commission_open_trade))
             self.get_award(profit - (commission + commission_open_trade))
 
     def close_short(self):
@@ -286,7 +320,8 @@ class Simulator:
             self.count_trades += 1
             self.update_account()
             self.add_trade_to_history('short', close_trade[2], last_price, close_trade[3],
-                                      profit - (commission + commission_open_trade))
+                                      profit - (commission + commission_open_trade),
+                                      close_trade[5] - (commission + commission_open_trade))
             self.get_award(profit - (commission + commission_open_trade))
 
     def short(self, volume):
@@ -296,8 +331,8 @@ class Simulator:
         transaction_type = "'short'"
         if self.available_balance >= trade_cost:
             cur = self.con.cursor()
-            sql = 'insert into active_trades (type, open_price, volume, profit) VALUES ({0}, {1}, {2}, {3});'.format(
-                transaction_type, last_price, volume, 0.0)
+            sql = 'insert into active_trades (type, open_price, volume, profit, max_profit) ' \
+                  'VALUES ({0}, {1}, {2}, {3}, {4});'.format(transaction_type, last_price, volume, 0.0, 0.0)
             cur.execute("ROLLBACK")
             cur.execute(sql)
 

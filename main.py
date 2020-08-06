@@ -88,9 +88,9 @@ def main():
     sarsa.compile('adam', metrics=['mse'])
     sarsa.fit(env, nb_steps=10000, visualize=False, verbose=1)
     sarsa.save_weights('sarsa_weights_bnb_06_1.h5f', overwrite=True)
-    # sarsa.load_weights('sarsa_weights_bnb_06.h5f')
+    # sarsa.load_weights('sarsa_weights_bnb_06_1.h5f')
     # env.simulator = False
-    scores = sarsa.test(env, nb_episodes=100, visualize=False)
+    scores = sarsa.test(env, nb_episodes=100, visualize=True)
     print('Average score over 100 test games:{}'.format(np.mean(scores.history['episode_reward'])))
 
     _ = sarsa.test(env, nb_episodes=10, visualize=True)
