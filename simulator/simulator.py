@@ -87,7 +87,10 @@ class Simulator:
         if len(history) > 0:
             if history[0][0] != self.history_id:
                 if float(history[0][2]) != 0:
-                    self.reward += float(history[0][1]) / float(history[0][2])
+                    if float(history[0][1]) > 0:
+                        self.reward += float(history[0][1]) / float(history[0][2])
+                    else:
+                        self.reward -= float(history[0][1]) / float(history[0][2])
                     self.history_id = history[0][0]
 
     def get_account_info(self):
@@ -109,7 +112,7 @@ class Simulator:
                 max_profit = item[5]
                 if profit > max_profit:
                     max_profit = profit
-                # if profit < -1 or profit > 2:
+                # if profit < -2:
                 #     self.close_long()
                 cur = self.con.cursor()
                 sql = 'update active_trades set profit = {0}, max_profit = {1} where id = {2};'.\
@@ -120,7 +123,7 @@ class Simulator:
                 profit = - (last_price - item[2]) * item[3]
                 if profit > max_profit:
                     max_profit = profit
-                # if profit < -1 or profit > 2:
+                # if profit < -2:
                 #     self.close_short()
                 cur = self.con.cursor()
                 sql = 'update active_trades set profit = {0}, max_profit = {1} where id = {2};'\
@@ -149,9 +152,12 @@ class Simulator:
             self.balance, self.available_balance, self.profit, self.count_trades, self.max_down, self.max_profit)
         cur.execute(sql)
 
-    def get_active_trades(self):
+    def get_active_trades(self, profit=True):
+        sort = ''
+        if profit:
+            sort = 'desc'
         cur = self.con.cursor()
-        sql = 'select * from active_trades order by profit desc;'
+        sql = 'select * from active_trades order by profit {0};'.format(sort)
         cur.execute(sql)
         return cur.fetchall()
 
@@ -177,7 +183,7 @@ class Simulator:
         if self.simulation:
             if len(self.states) == 0:
                 cur = self.con.cursor()
-                sql = 'select * from states limit 40000;'
+                sql = 'select * from states;'
                 cur.execute("ROLLBACK")
                 cur.execute(sql)
                 self.states = cur.fetchall()
@@ -266,10 +272,10 @@ class Simulator:
             self.count_trades += 1
             self.update_account()
 
-    def close_long(self):
+    def close_long(self, profit=True):
         self.get_account_info()
         last_price = self.get_last_price()
-        active_trades = self.get_active_trades()
+        active_trades = self.get_active_trades(profit)
         long_cost = Decimal(0.0)
         long_positions = list()
         for item in active_trades:
@@ -296,10 +302,10 @@ class Simulator:
                                       close_trade[5] - (commission + commission_open_trade))
             self.get_award(profit - (commission + commission_open_trade))
 
-    def close_short(self):
+    def close_short(self, profit=True):
         self.get_account_info()
         last_price = self.get_last_price()
-        active_trades = self.get_active_trades()
+        active_trades = self.get_active_trades(profit)
         short_cost = Decimal(0.0)
         short_positions = list()
         for item in active_trades:

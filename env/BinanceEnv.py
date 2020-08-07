@@ -16,7 +16,7 @@ class BinanceEnv(gym.Env):
 
     def __init__(self):
         super(BinanceEnv, self).__init__()
-        self.action_space = spaces.Discrete(5)
+        self.action_space = spaces.Discrete(7)
         self.observation_space = spaces.Box(low=-1000, high=20000,
                                             shape=(84,), dtype=np.float16)
         self.binance = BinanceReader()
@@ -62,11 +62,15 @@ class BinanceEnv(gym.Env):
         if action_type == 0:
             self.simulator.long(10)
         elif action_type == 1:
-            self.simulator.close_long()
+            self.simulator.close_long(True)
         elif action_type == 2:
-            self.simulator.short(10)
+            self.simulator.close_long(False)
         elif action_type == 3:
-            self.simulator.close_short()
+            self.simulator.short(10)
+        elif action_type == 4:
+            self.simulator.close_short(True)
+        elif action_type == 5:
+            self.simulator.close_short(False)
         # self.render()
 
     def render(self, mode='human', close=False):
@@ -89,7 +93,7 @@ class BinanceEnv(gym.Env):
         self.simulator.current_step += 1
         reward = float(self.simulator.reward)
         done = False
-        if self.simulator.reward < - 100 or self.current_step + 1 == self.simulator.max_steps:
+        if self.simulator.profit < - 500 or self.current_step + 1 == self.simulator.max_steps:
             done = True
 
         obs = self.next_observation()
