@@ -4,6 +4,7 @@ from decimal import Decimal
 from binance_data import BinanceReader
 import numpy as np
 import pandas as pd
+import math
 
 
 class Simulator:
@@ -67,31 +68,34 @@ class Simulator:
 
     def get_history(self):
         cur = self.con.cursor()
-        sql = 'select id, profit, max_profit, max_down from history order by id;'
+        sql = 'select id, profit, max_profit, max_down, open_price, volume from history order by id desc limit 100;'
         cur.execute("ROLLBACK")
         cur.execute(sql)
         return cur.fetchall()
 
     def get_award(self, profit):
-        # if profit <= 0:
-        #     self.reward -= abs(float(profit))
-        # else:
-        #     self.reward += float(profit)
-        # sum_profit = 0.0
-        # active_trades = self.get_active_trades()
-        # if len(active_trades) > 0:
-        #     for item in active_trades:
-        #         sum_profit += float(item[4])
-        #     self.reward += sum_profit / len(active_trades)
         history = self.get_history()
         if len(history) > 0:
-            if history[0][0] != self.history_id:
-                if float(history[0][2]) != 0:
-                    if float(history[0][1]) > 0:
-                        self.reward += float(history[0][1]) / float(history[0][2])
-                    else:
-                        self.reward -= float(history[0][1]) / float(history[0][2])
-                    self.history_id = history[0][0]
+            # relative_profits = list()
+            # for item in history:
+            #     cost = item[4] * item[5] + item[4] * item[5] * self.commission
+            #     relative_profits.append(((cost + item[1]) - cost) / cost + 1)
+            # relative_profits = np.asarray(relative_profits, dtype=np.float)
+            # ahpr = np.average(relative_profits)
+            # varience = np.var(relative_profits)
+            # self.reward = math.sqrt(ahpr**2 - varience)
+            count_positive = 0
+            profit = 0.0
+            count_negative = 0
+            loss = 0.0
+            for item in history:
+                if item[1] > 0:
+                    count_positive += 1
+                    profit += float(item[1])
+                else:
+                    count_negative += 1
+                    loss += float(item[1])
+            self.reward = (count_positive / len(history)) * profit + (count_negative / len(history)) * loss
 
     def get_account_info(self):
         cur = self.con.cursor()
@@ -357,12 +361,9 @@ class Simulator:
     def get_twr(self, f):
         history = self.get_history()
         twr = 0.0
-        if len(history) > 20:
+        if len(history) > 5:
             twr = 1.0
-            max_down = 0.0
-            for item in history:
-                if float(item[1]) < max_down:
-                    max_down = float(item[1])
+            max_down = float(self.get_max_down_trade()[0][2])
             for item in history:
                 twr = twr * (1 + f * (float(-item[1])) / max_down)
         return twr
@@ -387,8 +388,8 @@ class Simulator:
     def get_volume(self):
         f = self.get_optimal_f()
         history = self.get_history()
-        if f != 0.0 and len(history) > 20:
+        if f != 0.0 and len(history) > 5:
             max_down = float(self.get_max_down_trade()[0][2])
             return float(float(self.balance) / (max_down / (- 1 * f))) / 1000.00
         else:
-            return 10
+            return 1

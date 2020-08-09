@@ -28,16 +28,16 @@ def agent(states, actions):
     # model.add(Dense(actions, activation='linear'))
     # print(model.summary())
 
-    model.add(LSTM(units=256, return_sequences=True, input_shape=(1, states)))
+    model.add(LSTM(units=512, return_sequences=True, input_shape=(1, states)))
     model.add(Dropout(0.2))
 
-    model.add(LSTM(units=256, return_sequences=True))
+    model.add(LSTM(units=512, return_sequences=True))
     model.add(Dropout(0.2))
 
-    model.add(LSTM(units=256, return_sequences=True))
+    model.add(LSTM(units=512, return_sequences=True))
     model.add(Dropout(0.2))
 
-    model.add(LSTM(units=256))
+    model.add(LSTM(units=512))
     model.add(Dropout(0.2))
 
     model.add(Dense(actions, activation='relu'))
@@ -87,11 +87,13 @@ def main():
     sarsa = SARSAAgent(model=model, policy=policy, nb_actions=env.action_space.n)
     sarsa.compile('adam', metrics=['mse', 'accuracy'])
     # sarsa.load_weights('sarsa_weights_bnb_07.h5f')
-    sarsa.fit(env, nb_steps=10000, visualize=False, verbose=1)
+    env.is_testing = False
+    sarsa.fit(env, nb_steps=100000, visualize=False, verbose=1)
     sarsa.save_weights('sarsa_weights_bnb_07_1.h5f', overwrite=True)
     # sarsa.load_weights('sarsa_weights_bnb_07_1.h5f')
     # env.simulator = False
-    scores = sarsa.test(env, nb_episodes=5, visualize=True)
+    env.is_testing = True
+    scores = sarsa.test(env, nb_episodes=1, visualize=False)
     print('Average score over 100 test games:{}'.format(np.mean(scores.history['episode_reward'])))
 
     _ = sarsa.test(env, nb_episodes=10, visualize=True)
