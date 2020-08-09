@@ -19,7 +19,7 @@ class BinanceEnv(gym.Env):
         super(BinanceEnv, self).__init__()
         self.action_space = spaces.Discrete(7)
         self.observation_space = spaces.Box(low=0, high=1,
-                                            shape=(65,), dtype=np.float16)
+                                            shape=(60, 3, 1), dtype=np.float16)
         self.binance = BinanceReader()
         self.simulator = Simulator()
         self.current_step = 0
@@ -29,29 +29,32 @@ class BinanceEnv(gym.Env):
 
     def next_observation(self):
         # Get the stock data points for the last 5 days and scale to between 0-1
-        # asks, bids = self.simulator.get_order_book()
-        # data = list()
-        # for item in asks:
-        #     data.append(item[1])
-        # asks = np.asarray(data)
-        # data = list()
-        # for item in bids:
-        #     data.append(item[1])
-        # bids = np.asarray(data)
+        asks, bids = self.simulator.get_order_book()
+        data = list()
+        for item in asks:
+            data.append([item[0], item[1], 0])
+        asks = np.asarray(data)
+        data = list()
+        for item in bids:
+            data.append([item[0], item[1], 1])
+        bids = np.asarray(data)
         recent_trades = self.simulator.get_recent_trades()
         # data = list()
         # for item in recent_trades:
         #     data.append([item[1], item[2]])
         # recent_trades = np.asarray(data)
-        self.last_price = self.simulator.get_last_price()
-        max_short, max_long = self.simulator.get_max_short_and_long()
-        obs = np.append(recent_trades, self.simulator.profit)
-        # obs = np.append(obs, recent_trades)
-        # obs = np.append(obs, self.simulator.profit)
-        obs = np.append(obs, self.simulator.balance)
-        obs = np.append(obs, self.last_price)
-        obs = np.append(obs, np.asarray(max_long))
-        obs = np.append(obs, np.asarray(max_short))
+        # self.last_price = self.simulator.get_last_price()
+        # max_short, max_long = self.simulator.get_max_short_and_long()
+        # obs = np.append(recent_trades, self.simulator.profit)
+        # obs = np.append(obs, asks)
+        # obs = np.append(obs, bids)
+        # obs = np.append(obs, self.simulator.balance)
+        # obs = np.append(obs, self.last_price)
+        # obs = np.append(obs, np.asarray(max_long))
+        # obs = np.append(obs, np.asarray(max_short))
+        obs = np.append(asks, bids, axis=0)
+        obs = np.append(obs, recent_trades, axis=0)
+        obs = obs.reshape(list(obs.shape) + [1])
         return np.asarray(obs, dtype=np.float)
 
     def reset(self):

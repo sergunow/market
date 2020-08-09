@@ -10,7 +10,8 @@ import datetime as dt
 
 import random
 import numpy as np
-from keras.layers import Dense, Flatten, LSTM, Dropout
+from keras.layers import Dense, Flatten, LSTM, Dropout, Input, ConvLSTM2D, BatchNormalization, MaxPooling1D, \
+    TimeDistributed
 from keras.models import Sequential
 from keras.optimizers import Adam
 from rl.agents import SARSAAgent
@@ -28,19 +29,40 @@ def agent(states, actions):
     # model.add(Dense(actions, activation='linear'))
     # print(model.summary())
 
-    model.add(LSTM(units=512, return_sequences=True, input_shape=(1, states)))
+    # model.add(LSTM(units=512, return_sequences=True, input_shape=(1, states)))
+    # model.add(Dropout(0.2))
+    #
+    # model.add(LSTM(units=512, return_sequences=True))
+    # model.add(Dropout(0.2))
+    #
+    # model.add(LSTM(units=512, return_sequences=True))
+    # model.add(Dropout(0.2))
+    #
+    # model.add(LSTM(units=512))
+    # model.add(Dropout(0.2))
+    # model.add(Dense(actions, activation='relu'))
+    model.add(Input(shape=(None, 60, 3, 1)))
+    model.add(ConvLSTM2D(
+            filters=40, kernel_size=(3, 3), padding="same", return_sequences=True
+        ))
+    model.add(BatchNormalization())
+    model.add(ConvLSTM2D(
+        filters=40, kernel_size=(3, 3), padding="same", return_sequences=True
+    ))
+    model.add(BatchNormalization())
+    model.add(ConvLSTM2D(
+        filters=40, kernel_size=(3, 3), padding="same", return_sequences=True
+    ))
+    model.add(BatchNormalization())
+    model.add(ConvLSTM2D(
+        filters=40, kernel_size=(3, 3), padding="same", return_sequences=True
+    ))
+    model.add(TimeDistributed(Flatten()))
+    model.add(LSTM(units=32, return_sequences=True))
     model.add(Dropout(0.2))
-
-    model.add(LSTM(units=512, return_sequences=True))
-    model.add(Dropout(0.2))
-
-    model.add(LSTM(units=512, return_sequences=True))
-    model.add(Dropout(0.2))
-
-    model.add(LSTM(units=512))
-    model.add(Dropout(0.2))
-
-    model.add(Dense(actions, activation='relu'))
+    model.add(LSTM(units=32))
+    model.add(Dense(256, activation='relu'))
+    model.add(Dense(actions, activation='linear'))
     print(model.summary())
 
     return model
@@ -82,10 +104,10 @@ def main():
     #         score += reward
     #     print('episode {} score {}'.format(episode, score))
 
-    model = agent(env.observation_space.shape[0], env.action_space.n)
+    model = agent(env.observation_space.shape, env.action_space.n)
     policy = EpsGreedyQPolicy()
     sarsa = SARSAAgent(model=model, policy=policy, nb_actions=env.action_space.n)
-    sarsa.compile('adam', metrics=['mse', 'accuracy'])
+    sarsa.compile(optimizer="adadelta", metrics=['mse', 'accuracy'])
     # sarsa.load_weights('sarsa_weights_bnb_07.h5f')
     env.is_testing = False
     sarsa.fit(env, nb_steps=100000, visualize=False, verbose=1)

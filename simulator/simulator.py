@@ -37,7 +37,7 @@ class Simulator:
     def _connect(self):
         self.con = psycopg2.connect(
             database="orderbook",
-            user="admin",
+            user="postgres",
             password="l82Z01vdQl",
             host="127.0.0.1",
             port="5432"
