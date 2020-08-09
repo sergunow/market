@@ -87,7 +87,7 @@ def main():
     sarsa = SARSAAgent(model=model, policy=policy, nb_actions=env.action_space.n)
     sarsa.compile('adam', metrics=['mse', 'accuracy'])
     # sarsa.load_weights('sarsa_weights_bnb_07.h5f')
-    sarsa.fit(env, nb_steps=6000000, visualize=False, verbose=1)
+    sarsa.fit(env, nb_steps=10000, visualize=False, verbose=1)
     sarsa.save_weights('sarsa_weights_bnb_07_1.h5f', overwrite=True)
     # sarsa.load_weights('sarsa_weights_bnb_07_1.h5f')
     # env.simulator = False

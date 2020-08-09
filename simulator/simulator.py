@@ -56,18 +56,18 @@ class Simulator:
         cur.execute(sql)
         self.reward = 0.0
 
-    def add_trade_to_history(self, type, open_price, close_price, volume, profit, max_profit):
+    def add_trade_to_history(self, type, open_price, close_price, volume, profit, max_profit, max_down):
         type = "'" + str(type) + "'"
         cur = self.con.cursor()
-        sql = 'insert into history (type, open_price, close_price, volume, profit, max_profit) VALUES (' + str(
-            type) + ', ' + str(open_price) + ', ' + str(close_price) + ', ' + str(volume) + ', ' + str(profit) + ', '\
-              + str(max_profit) + ');'
+        sql = 'insert into history (type, open_price, close_price, volume, profit, max_profit, max_down) ' \
+              'VALUES (' + str(type) + ', ' + str(open_price) + ', ' + str(close_price) + ', ' + str(volume) \
+              + ', ' + str(profit) + ', ' + str(max_profit) + ', ' + str(max_down) + ');'
         cur.execute("ROLLBACK")
         cur.execute(sql)
 
     def get_history(self):
         cur = self.con.cursor()
-        sql = 'select id, profit, max_profit from history order by id;'
+        sql = 'select id, profit, max_profit, max_down from history order by id;'
         cur.execute("ROLLBACK")
         cur.execute(sql)
         return cur.fetchall()
@@ -110,24 +110,30 @@ class Simulator:
             if item[1] == 'long':
                 profit = (last_price - item[2]) * item[3]
                 max_profit = item[5]
+                max_down = item[6]
                 if profit > max_profit:
                     max_profit = profit
+                if profit < max_down:
+                    max_down = profit
                 # if profit < -2:
                 #     self.close_long()
                 cur = self.con.cursor()
-                sql = 'update active_trades set profit = {0}, max_profit = {1} where id = {2};'.\
-                    format(profit, max_profit, item[0])
+                sql = 'update active_trades set profit = {0}, max_profit = {1}, max_down = {2} where id = {3};'. \
+                    format(profit, max_profit, max_down, item[0])
                 cur.execute(sql)
             if item[1] == 'short':
                 max_profit = item[5]
+                max_down = item[6]
                 profit = - (last_price - item[2]) * item[3]
                 if profit > max_profit:
                     max_profit = profit
+                if profit < max_down:
+                    max_down = profit
                 # if profit < -2:
                 #     self.close_short()
                 cur = self.con.cursor()
-                sql = 'update active_trades set profit = {0}, max_profit = {1} where id = {2};'\
-                    .format(profit, max_profit, item[0])
+                sql = 'update active_trades set profit = {0}, max_profit = {1}, max_down = {2} where id = {3};' \
+                    .format(profit, max_profit, max_down, item[0])
                 cur.execute(sql)
 
     def update_account(self):
@@ -263,8 +269,8 @@ class Simulator:
         transaction_type = "'long'"
         if self.available_balance >= trade_cost:
             cur = self.con.cursor()
-            sql = 'insert into active_trades (type, open_price, volume, profit, max_profit) ' \
-                  'VALUES ({0}, {1}, {2}, {3}, {4});'.format(transaction_type, last_price, volume, 0.0, 0.0)
+            sql = 'insert into active_trades (type, open_price, volume, profit, max_profit, max_down) ' \
+                  'VALUES ({0}, {1}, {2}, {3}, {4}, {5});'.format(transaction_type, last_price, volume, 0.0, 0.0, 0.0)
             cur.execute("ROLLBACK")
             cur.execute(sql)
 
@@ -299,7 +305,8 @@ class Simulator:
                 a = 1
             self.add_trade_to_history('long', close_trade[2], last_price, close_trade[3],
                                       profit - (commission + commission_open_trade),
-                                      close_trade[5] - (commission + commission_open_trade))
+                                      close_trade[5] - (commission + commission_open_trade),
+                                      close_trade[6] - (commission + commission_open_trade))
             self.get_award(profit - (commission + commission_open_trade))
 
     def close_short(self, profit=True):
@@ -327,7 +334,8 @@ class Simulator:
             self.update_account()
             self.add_trade_to_history('short', close_trade[2], last_price, close_trade[3],
                                       profit - (commission + commission_open_trade),
-                                      close_trade[5] - (commission + commission_open_trade))
+                                      close_trade[5] - (commission + commission_open_trade),
+                                      close_trade[6] - (commission + commission_open_trade))
             self.get_award(profit - (commission + commission_open_trade))
 
     def short(self, volume):
@@ -337,8 +345,8 @@ class Simulator:
         transaction_type = "'short'"
         if self.available_balance >= trade_cost:
             cur = self.con.cursor()
-            sql = 'insert into active_trades (type, open_price, volume, profit, max_profit) ' \
-                  'VALUES ({0}, {1}, {2}, {3}, {4});'.format(transaction_type, last_price, volume, 0.0, 0.0)
+            sql = 'insert into active_trades (type, open_price, volume, profit, max_profit, max_down) ' \
+                  'VALUES ({0}, {1}, {2}, {3}, {4}, {5});'.format(transaction_type, last_price, volume, 0.0, 0.0, 0.0)
             cur.execute("ROLLBACK")
             cur.execute(sql)
 
@@ -346,12 +354,41 @@ class Simulator:
             self.count_trades += 1
             self.update_account()
 
+    def get_twr(self, f):
+        history = self.get_history()
+        twr = 0.0
+        if len(history) > 20:
+            twr = 1.0
+            max_down = 0.0
+            for item in history:
+                if float(item[1]) < max_down:
+                    max_down = float(item[1])
+            for item in history:
+                twr = twr * (1 + f * (float(-item[1])) / max_down)
+        return twr
 
-if __name__ == '__main__':
-    simulator = Simulator()
-    simulator.current_step = 10
-    simulator.get_last_price()
-    a, c = simulator.get_order_book()
-    b = simulator.get_recent_trades()
-    a = np.asarray(a).flatten()
-    i = 0
+    def get_optimal_f(self):
+        twr = 0.0
+        optimal_f = 0.0
+        for i in np.arange(0.05, 1, 0.05):
+            step_twr = self.get_twr(i)
+            if step_twr > twr:
+                twr = step_twr
+                optimal_f = i
+        return optimal_f
+
+    def get_max_down_trade(self):
+        cur = self.con.cursor()
+        sql = 'select id, profit, max_profit, max_down from history order by profit limit 1;'
+        cur.execute("ROLLBACK")
+        cur.execute(sql)
+        return cur.fetchall()
+
+    def get_volume(self):
+        f = self.get_optimal_f()
+        history = self.get_history()
+        if f != 0.0 and len(history) > 20:
+            max_down = float(self.get_max_down_trade()[0][2])
+            return float(float(self.balance) / (max_down / (- 1 * f))) / 1000.00
+        else:
+            return 10

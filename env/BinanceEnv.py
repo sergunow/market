@@ -4,6 +4,7 @@ import gym
 from gym import spaces
 import pandas as pd
 import numpy as np
+from decimal import Decimal
 
 from binance_data import BinanceReader
 import math
@@ -48,7 +49,7 @@ class BinanceEnv(gym.Env):
         obs = np.append(obs, self.simulator.balance)
         obs = np.append(obs, np.asarray(max_long))
         obs = np.append(obs, np.asarray(max_short))
-        return obs
+        return np.asarray(obs, dtype=np.float)
 
     def reset(self):
         self.simulator = Simulator()
@@ -59,14 +60,15 @@ class BinanceEnv(gym.Env):
     def _take_action(self, action_type):
         # Set the current price to a random price within the time step
         # print('\n action = ', action_type)
+        volume = Decimal(self.simulator.get_volume())
         if action_type == 0:
-            self.simulator.long(10)
+            self.simulator.long(volume)
         elif action_type == 1:
             self.simulator.close_long(True)
         elif action_type == 2:
             self.simulator.close_long(False)
         elif action_type == 3:
-            self.simulator.short(10)
+            self.simulator.short(volume)
         elif action_type == 4:
             self.simulator.close_short(True)
         elif action_type == 5:
