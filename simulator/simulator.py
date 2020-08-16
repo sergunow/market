@@ -5,10 +5,140 @@ from binance_data import BinanceReader
 import numpy as np
 import pandas as pd
 import math
+from scipy.stats import zscore
+
+states = list()
+recent_trades = list()
+asks = list()
+bids = list()
+
+
+class DataSimulator:
+    def __init__(self, simulation=True, step=0):
+        self.simulation = simulation
+        self.state_id = 0
+        self.max_steps = 0
+        self.states = list()
+        self.recent_trades = list()
+        self.asks = list()
+        self.bids = list()
+        self.current_step = step
+        self._connect()
+        self.binance = BinanceReader()
+        self.get_last_price()
+
+    def _connect(self):
+        self.con = psycopg2.connect(
+            database="orderbook",
+            user="admin",
+            password="l82Z01vdQl",
+            host="127.0.0.1",
+            port="5432"
+        )
+
+    def get_last_price(self):
+        if self.simulation:
+            if len(self.states) == 0:
+                cur = self.con.cursor()
+                sql = 'select * from states;'
+                cur.execute("ROLLBACK")
+                cur.execute(sql)
+                self.states = cur.fetchall()
+                self.max_steps = len(self.states)
+            self.state_id = self.states[self.current_step][0]
+            return self.states[self.current_step][2]
+        else:
+            return self.binance.get_last_price()
+
+    def get_previous_price(self):
+        if self.simulation:
+            if len(self.states) == 0:
+                cur = self.con.cursor()
+                sql = 'select * from states;'
+                cur.execute("ROLLBACK")
+                cur.execute(sql)
+                self.states = cur.fetchall()
+                self.max_steps = len(self.states)
+            self.state_id = self.states[self.current_step - 1][0]
+            return self.states[self.current_step - 1][2]
+        else:
+            return self.binance.get_last_price()
+
+    def get_recent_trades(self):
+        if self.simulation:
+            if len(self.recent_trades) == 0:
+                cur = self.con.cursor()
+                sql = 'select price, volume, type_transaction, state_id from time_and_sales;'
+                cur.execute("ROLLBACK")
+                cur.execute(sql)
+                data = np.asarray(cur.fetchall())
+                dict = {}
+                i = 0
+                for item in data:
+                    dict[i] = {
+                        'price': item[0],
+                        'volume': item[1],
+                        'isBuyerMaker': item[2],
+                        'state_id': item[3]
+                    }
+                    i += 1
+                self.recent_trades = pd.DataFrame.from_dict(dict, 'index')
+                # self.recent_trades.to_csv('./recent_trades.csv')
+                self.recent_trades[['price', 'volume']] = self.recent_trades[['price', 'volume']].apply(zscore)
+            return np.asarray(self.recent_trades[self.recent_trades['state_id'] == self.state_id][
+                                  ['price', 'volume', 'isBuyerMaker']])
+        else:
+            return np.asarray(self.binance.get_recent_trades())
+
+    def get_order_book(self):
+        if self.simulation:
+            if len(self.asks) == 0:
+                cur = self.con.cursor()
+                sql = 'select price, volume, state_id from asks;'
+                cur.execute("ROLLBACK")
+                cur.execute(sql)
+                data = cur.fetchall()
+                dict = {}
+                i = 0
+                for item in data:
+                    dict[i] = {
+                        'price': item[0],
+                        'volume': item[1],
+                        'state_id': item[2]
+                    }
+                    i += 1
+                self.asks = pd.DataFrame.from_dict(dict, 'index')
+                self.asks[['price', 'volume']] = self.asks[['price', 'volume']].apply(zscore)
+                self.asks['type'] = 0
+            if len(self.bids) == 0:
+                cur = self.con.cursor()
+                sql = 'select price, volume, state_id from bids;'
+                cur.execute("ROLLBACK")
+                cur.execute(sql)
+                data = cur.fetchall()
+                dict = {}
+                i = 0
+                for item in data:
+                    dict[i] = {
+                        'price': item[0],
+                        'volume': item[1],
+                        'state_id': item[2]
+                    }
+                    i += 1
+                self.bids = pd.DataFrame.from_dict(dict, 'index')
+                self.bids[['price', 'volume']] = self.bids[['price', 'volume']].apply(zscore)
+                self.bids['type'] = 1
+            return np.asarray(self.asks[self.asks['state_id'] == self.state_id][['price', 'volume', 'type']]), \
+                   np.asarray(self.bids[self.bids['state_id'] == self.state_id][['price', 'volume', 'type']]), \
+                   self.asks[self.asks['state_id'] == self.state_id]['price'].sum(), \
+                   self.bids[self.bids['state_id'] == self.state_id]['price'].sum()
+        else:
+            return np.asarray(self.binance.get_order_book())
 
 
 class Simulator:
     def __init__(self, simulation=True, step=0):
+        self.DataSimulator = DataSimulator(simulation=simulation, step=step)
         self.balance = 10000
         self.available_balance = self.balance
         self.initial_balance = self.balance
@@ -37,7 +167,7 @@ class Simulator:
     def _connect(self):
         self.con = psycopg2.connect(
             database="orderbook",
-            user="postgres",
+            user="admin",
             password="l82Z01vdQl",
             host="127.0.0.1",
             port="5432"
@@ -68,7 +198,7 @@ class Simulator:
 
     def get_history(self):
         cur = self.con.cursor()
-        sql = 'select id, profit, max_profit, max_down, open_price, volume from history order by id desc limit 100;'
+        sql = 'select id, profit, max_profit, max_down, open_price, volume from history order by id desc limit 20;'
         cur.execute("ROLLBACK")
         cur.execute(sql)
         return cur.fetchall()
@@ -190,81 +320,87 @@ class Simulator:
         return max_long, max_long
 
     def get_last_price(self):
-        if self.simulation:
-            if len(self.states) == 0:
-                cur = self.con.cursor()
-                sql = 'select * from states;'
-                cur.execute("ROLLBACK")
-                cur.execute(sql)
-                self.states = cur.fetchall()
-                self.max_steps = len(self.states)
-            self.state_id = self.states[self.current_step][0]
-            return self.states[self.current_step][2]
-        else:
-            return self.binance.get_last_price()
+        # if self.simulation:
+        #     if len(self.states) == 0:
+        #         cur = self.con.cursor()
+        #         sql = 'select * from states;'
+        #         cur.execute("ROLLBACK")
+        #         cur.execute(sql)
+        #         self.states = cur.fetchall()
+        #         self.max_steps = len(self.states)
+        #     self.state_id = self.states[self.current_step][0]
+        #     return self.states[self.current_step][2]
+        # else:
+        #     return self.binance.get_last_price()
+        return self.DataSimulator.get_last_price()
+
+    def get_previous_price(self):
+        return self.DataSimulator.get_previous_price()
 
     def get_recent_trades(self):
-        if self.simulation:
-            if len(self.recent_trades) == 0:
-                cur = self.con.cursor()
-                sql = 'select price, volume, type_transaction, state_id from time_and_sales;'
-                cur.execute("ROLLBACK")
-                cur.execute(sql)
-                data = np.asarray(cur.fetchall())
-                dict = {}
-                i = 0
-                for item in data:
-                    dict[i] = {
-                        'price': item[0],
-                        'volume': item[1],
-                        'isBuyerMaker': item[2],
-                        'state_id': item[3]
-                    }
-                    i += 1
-                self.recent_trades = pd.DataFrame.from_dict(dict, 'index')
-            return np.asarray(self.recent_trades[self.recent_trades['state_id'] == self.state_id][
-                                  ['price', 'volume', 'isBuyerMaker']])
-        else:
-            return np.asarray(self.binance.get_recent_trades())
+        return self.DataSimulator.get_recent_trades()
+        # if self.simulation:
+        #     if len(self.recent_trades) == 0:
+        #         cur = self.con.cursor()
+        #         sql = 'select price, volume, type_transaction, state_id from time_and_sales;'
+        #         cur.execute("ROLLBACK")
+        #         cur.execute(sql)
+        #         data = np.asarray(cur.fetchall())
+        #         dict = {}
+        #         i = 0
+        #         for item in data:
+        #             dict[i] = {
+        #                 'price': item[0],
+        #                 'volume': item[1],
+        #                 'isBuyerMaker': item[2],
+        #                 'state_id': item[3]
+        #             }
+        #             i += 1
+        #         self.recent_trades = pd.DataFrame.from_dict(dict, 'index')
+        #     return np.asarray(self.recent_trades[self.recent_trades['state_id'] == self.state_id][
+        #                           ['price', 'volume', 'isBuyerMaker']])
+        # else:
+        #     return np.asarray(self.binance.get_recent_trades())
 
     def get_order_book(self):
-        if self.simulation:
-            if len(self.asks) == 0:
-                cur = self.con.cursor()
-                sql = 'select price, volume, state_id from asks;'
-                cur.execute("ROLLBACK")
-                cur.execute(sql)
-                data = cur.fetchall()
-                dict = {}
-                i = 0
-                for item in data:
-                    dict[i] = {
-                        'price': item[0],
-                        'volume': item[1],
-                        'state_id': item[2]
-                    }
-                    i += 1
-                self.asks = pd.DataFrame.from_dict(dict, 'index')
-            if len(self.bids) == 0:
-                cur = self.con.cursor()
-                sql = 'select price, volume, state_id from bids;'
-                cur.execute("ROLLBACK")
-                cur.execute(sql)
-                data = cur.fetchall()
-                dict = {}
-                i = 0
-                for item in data:
-                    dict[i] = {
-                        'price': item[0],
-                        'volume': item[1],
-                        'state_id': item[2]
-                    }
-                    i += 1
-                self.bids = pd.DataFrame.from_dict(dict, 'index')
-            return np.asarray(self.asks[self.asks['state_id'] == self.state_id][['price', 'volume']]), \
-                   np.asarray(self.bids[self.bids['state_id'] == self.state_id][['price', 'volume']])
-        else:
-            return np.asarray(self.binance.get_order_book())
+        return self.DataSimulator.get_order_book()
+        # if self.simulation:
+        #     if len(self.asks) == 0:
+        #         cur = self.con.cursor()
+        #         sql = 'select price, volume, state_id from asks;'
+        #         cur.execute("ROLLBACK")
+        #         cur.execute(sql)
+        #         data = cur.fetchall()
+        #         dict = {}
+        #         i = 0
+        #         for item in data:
+        #             dict[i] = {
+        #                 'price': item[0],
+        #                 'volume': item[1],
+        #                 'state_id': item[2]
+        #             }
+        #             i += 1
+        #         self.asks = pd.DataFrame.from_dict(dict, 'index')
+        #     if len(self.bids) == 0:
+        #         cur = self.con.cursor()
+        #         sql = 'select price, volume, state_id from bids;'
+        #         cur.execute("ROLLBACK")
+        #         cur.execute(sql)
+        #         data = cur.fetchall()
+        #         dict = {}
+        #         i = 0
+        #         for item in data:
+        #             dict[i] = {
+        #                 'price': item[0],
+        #                 'volume': item[1],
+        #                 'state_id': item[2]
+        #             }
+        #             i += 1
+        #         self.bids = pd.DataFrame.from_dict(dict, 'index')
+        #     return np.asarray(self.asks[self.asks['state_id'] == self.state_id][['price', 'volume']]), \
+        #            np.asarray(self.bids[self.bids['state_id'] == self.state_id][['price', 'volume']])
+        # else:
+        #     return np.asarray(self.binance.get_order_book())
 
     def long(self, volume):
         self.get_account_info()

@@ -19,42 +19,29 @@ class BinanceEnv(gym.Env):
         super(BinanceEnv, self).__init__()
         self.action_space = spaces.Discrete(7)
         self.observation_space = spaces.Box(low=0, high=1,
-                                            shape=(60, 3, 1), dtype=np.float16)
+                                            shape=(1, 61, 3, 1), dtype=np.float16)
         self.binance = BinanceReader()
         self.simulator = Simulator()
         self.current_step = 0
         self.initial_step = 0
         self.last_price = 0.0
+        self.previous_price = 0.0
         self.is_testing = True
 
     def next_observation(self):
         # Get the stock data points for the last 5 days and scale to between 0-1
-        asks, bids = self.simulator.get_order_book()
-        data = list()
-        for item in asks:
-            data.append([item[0], item[1], 0])
-        asks = np.asarray(data)
-        data = list()
-        for item in bids:
-            data.append([item[0], item[1], 1])
-        bids = np.asarray(data)
+        asks, bids, sum_asks, sum_bids = self.simulator.get_order_book()
         recent_trades = self.simulator.get_recent_trades()
-        # data = list()
-        # for item in recent_trades:
-        #     data.append([item[1], item[2]])
-        # recent_trades = np.asarray(data)
-        # self.last_price = self.simulator.get_last_price()
-        # max_short, max_long = self.simulator.get_max_short_and_long()
-        # obs = np.append(recent_trades, self.simulator.profit)
-        # obs = np.append(obs, asks)
-        # obs = np.append(obs, bids)
-        # obs = np.append(obs, self.simulator.balance)
-        # obs = np.append(obs, self.last_price)
-        # obs = np.append(obs, np.asarray(max_long))
-        # obs = np.append(obs, np.asarray(max_short))
+        self.last_price = self.simulator.get_last_price()
+        self.previous_price = self.simulator.get_previous_price()
+        indicators = np.asarray([sum_asks, sum_bids, ((self.last_price - self.previous_price) / self.previous_price)],
+                                dtype=np.float)
+        indicators = indicators.reshape([1] + list(indicators.shape))
         obs = np.append(asks, bids, axis=0)
         obs = np.append(obs, recent_trades, axis=0)
+        obs = np.append(obs, indicators, axis=0)
         obs = obs.reshape(list(obs.shape) + [1])
+        # obs = obs.reshape([1] + list(obs.shape))
         return np.asarray(obs, dtype=np.float)
 
     def reset(self):
@@ -62,8 +49,8 @@ class BinanceEnv(gym.Env):
         if self.is_testing:
             self.current_step = 70000
         else:
-            self.current_step = random.randint(0, int(self.simulator.max_steps / 1.3))
-        self.simulator.current_step = self.current_step
+            self.current_step = random.randint(0, int(self.simulator.DataSimulator.max_steps / 1.3))
+        self.simulator.DataSimulator.current_step = self.current_step
         self.initial_step = self.current_step
         return self.next_observation()
 
@@ -103,11 +90,11 @@ class BinanceEnv(gym.Env):
         self._take_action(action)
 
         self.current_step += 1
-        self.simulator.current_step += 1
+        self.simulator.DataSimulator.current_step += 1
         reward = float(self.simulator.reward)
         done = False
         if self.simulator.profit < - 100 \
-                or self.current_step + 1 == self.simulator.max_steps \
+                or self.current_step + 1 == self.simulator.DataSimulator.max_steps \
                 or self.current_step - self.initial_step > 10000:
             done = True
 
