@@ -16,8 +16,9 @@ bids = list()
 class DataSimulator:
     def __init__(self, simulation=True, step=0):
         self.simulation = simulation
-        self.state_id = 0
+        # self.state_id = 0
         self.max_steps = 0
+        self.state_batches = list()
         self.states = list()
         self.recent_trades = list()
         self.asks = list()
@@ -30,7 +31,7 @@ class DataSimulator:
     def _connect(self):
         self.con = psycopg2.connect(
             database="orderbook",
-            user="admin",
+            user="postgres",
             password="l82Z01vdQl",
             host="127.0.0.1",
             port="5432"
@@ -39,28 +40,49 @@ class DataSimulator:
     def get_last_price(self):
         if self.simulation:
             if len(self.states) == 0:
+                self.get_batches()
                 cur = self.con.cursor()
                 sql = 'select * from states;'
                 cur.execute("ROLLBACK")
                 cur.execute(sql)
-                self.states = cur.fetchall()
-                self.max_steps = len(self.states)
-            self.state_id = self.states[self.current_step][0]
-            return self.states[self.current_step][2]
+                data = cur.fetchall()
+                data = np.asarray(data)
+                self.states = pd.DataFrame({'state_id': data[:, 0], 'price': data[:, 2]})
+            current_batch_id = self.state_batches.iloc[self.current_step]['batch_id']
+            state_id = self.state_batches[self.state_batches['batch_id'] == current_batch_id].sort_values(
+                by='state_id', ascending=False).iloc[0]['state_id']
+            return self.states[self.states['state_id'] == state_id].iloc[0]['price']
         else:
             return self.binance.get_last_price()
+
+    def get_batches(self):
+        if self.simulation:
+            if len(self.state_batches) == 0:
+                cur = self.con.cursor()
+                sql = 'select * from state_batches;'
+                cur.execute("ROLLBACK")
+                cur.execute(sql)
+                data = cur.fetchall()
+                data = np.asarray(data)
+                self.state_batches = pd.DataFrame({'state_id': data[:, 1], 'batch_id': data[:, 2]})
+                self.max_steps = len(self.state_batches['batch_id'].unique())
+            # self.state_id = self.state_batches[self.current_step][2]
 
     def get_previous_price(self):
         if self.simulation:
             if len(self.states) == 0:
+                self.get_batches()
                 cur = self.con.cursor()
                 sql = 'select * from states;'
                 cur.execute("ROLLBACK")
                 cur.execute(sql)
-                self.states = cur.fetchall()
-                self.max_steps = len(self.states)
-            self.state_id = self.states[self.current_step - 1][0]
-            return self.states[self.current_step - 1][2]
+                data = cur.fetchall()
+                data = np.asarray(data)
+                self.states = pd.DataFrame({'state_id': data[:, 0], 'price': data[:, 2]})
+            current_batch_id = self.state_batches.iloc[self.current_step]['batch_id']
+            state_id = self.state_batches[self.state_batches['batch_id'] == current_batch_id - 1].sort_values(
+                by='state_id', ascending=False).iloc[0]['state_id']
+            return self.states[self.states['state_id'] == state_id].iloc[0]['price']
         else:
             return self.binance.get_last_price()
 
@@ -72,21 +94,15 @@ class DataSimulator:
                 cur.execute("ROLLBACK")
                 cur.execute(sql)
                 data = np.asarray(cur.fetchall())
-                dict = {}
-                i = 0
-                for item in data:
-                    dict[i] = {
-                        'price': item[0],
-                        'volume': item[1],
-                        'isBuyerMaker': item[2],
-                        'state_id': item[3]
-                    }
-                    i += 1
-                self.recent_trades = pd.DataFrame.from_dict(dict, 'index')
-                # self.recent_trades.to_csv('./recent_trades.csv')
+                data = np.asarray(data)
+                self.recent_trades = pd.DataFrame(
+                    {'price': data[:, 0], 'volume': data[:, 1], 'type_transaction': data[:, 2], 'state_id': data[:, 3]})
                 self.recent_trades[['price', 'volume']] = self.recent_trades[['price', 'volume']].apply(zscore)
-            return np.asarray(self.recent_trades[self.recent_trades['state_id'] == self.state_id][
-                                  ['price', 'volume', 'isBuyerMaker']])
+            current_batch_id = self.state_batches.iloc[self.current_step]['batch_id']
+            state_ids = np.asarray(
+                self.state_batches[self.state_batches['batch_id'] == current_batch_id]['state_id'])
+            return np.asarray(self.recent_trades[self.recent_trades['state_id'].isin(state_ids)][
+                                  ['price', 'volume', 'type_transaction']])
         else:
             return np.asarray(self.binance.get_recent_trades())
 
@@ -98,16 +114,8 @@ class DataSimulator:
                 cur.execute("ROLLBACK")
                 cur.execute(sql)
                 data = cur.fetchall()
-                dict = {}
-                i = 0
-                for item in data:
-                    dict[i] = {
-                        'price': item[0],
-                        'volume': item[1],
-                        'state_id': item[2]
-                    }
-                    i += 1
-                self.asks = pd.DataFrame.from_dict(dict, 'index')
+                data = np.asarray(data)
+                self.asks = pd.DataFrame({'price': data[:, 0], 'volume': data[:, 1], 'state_id': data[:, 2]})
                 self.asks[['price', 'volume']] = self.asks[['price', 'volume']].apply(zscore)
                 self.asks['type'] = 0
             if len(self.bids) == 0:
@@ -116,22 +124,17 @@ class DataSimulator:
                 cur.execute("ROLLBACK")
                 cur.execute(sql)
                 data = cur.fetchall()
-                dict = {}
-                i = 0
-                for item in data:
-                    dict[i] = {
-                        'price': item[0],
-                        'volume': item[1],
-                        'state_id': item[2]
-                    }
-                    i += 1
-                self.bids = pd.DataFrame.from_dict(dict, 'index')
+                data = np.asarray(data)
+                self.bids = pd.DataFrame({'price': data[:, 0], 'volume': data[:, 1], 'state_id': data[:, 2]})
                 self.bids[['price', 'volume']] = self.bids[['price', 'volume']].apply(zscore)
                 self.bids['type'] = 1
-            return np.asarray(self.asks[self.asks['state_id'] == self.state_id][['price', 'volume', 'type']]), \
-                   np.asarray(self.bids[self.bids['state_id'] == self.state_id][['price', 'volume', 'type']]), \
-                   self.asks[self.asks['state_id'] == self.state_id]['price'].sum(), \
-                   self.bids[self.bids['state_id'] == self.state_id]['price'].sum()
+            current_batch_id = self.state_batches.iloc[self.current_step]['batch_id']
+            state_ids = np.asarray(
+                self.state_batches[self.state_batches['batch_id'] == current_batch_id]['state_id'])
+            return np.asarray(self.asks[self.asks['state_id'].isin(state_ids)][['price', 'volume', 'type']]), np.asarray(
+                self.bids[self.bids['state_id'].isin(state_ids)][['price', 'volume', 'type']]), \
+                   self.asks[self.asks['state_id'].isin(state_ids)]['volume'].sum(), \
+                   self.bids[self.bids['state_id'].isin(state_ids)]['volume'].sum()
         else:
             return np.asarray(self.binance.get_order_book())
 
@@ -167,7 +170,7 @@ class Simulator:
     def _connect(self):
         self.con = psycopg2.connect(
             database="orderbook",
-            user="admin",
+            user="postgres",
             password="l82Z01vdQl",
             host="127.0.0.1",
             port="5432"

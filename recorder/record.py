@@ -9,9 +9,9 @@ class Record:
     def __init__(self):
         self.con = psycopg2.connect(
             database="orderbook",
-            user="python",
+            user="postgres",
             password="l82Z01vdQl",
-            host="46.101.185.58",
+            host="127.0.0.1",
             port="5432"
         )
         try:

@@ -19,7 +19,7 @@ class BinanceEnv(gym.Env):
         super(BinanceEnv, self).__init__()
         self.action_space = spaces.Discrete(7)
         self.observation_space = spaces.Box(low=0, high=1,
-                                            shape=(1, 61, 3, 1), dtype=np.float16)
+                                            shape=(29, 60, 3), dtype=np.float16)
         self.binance = BinanceReader()
         self.simulator = Simulator()
         self.current_step = 0
@@ -29,18 +29,17 @@ class BinanceEnv(gym.Env):
         self.is_testing = True
 
     def next_observation(self):
-        # Get the stock data points for the last 5 days and scale to between 0-1
         asks, bids, sum_asks, sum_bids = self.simulator.get_order_book()
         recent_trades = self.simulator.get_recent_trades()
         self.last_price = self.simulator.get_last_price()
         self.previous_price = self.simulator.get_previous_price()
-        indicators = np.asarray([sum_asks, sum_bids, ((self.last_price - self.previous_price) / self.previous_price)],
-                                dtype=np.float)
-        indicators = indicators.reshape([1] + list(indicators.shape))
+        # indicators = np.asarray([sum_asks, sum_bids, ((self.last_price - self.previous_price) / self.previous_price)],
+        #                         dtype=np.float)
+        # indicators = indicators.reshape([1] + list(indicators.shape))
+        # indicators = indicators.reshape([1] + list(indicators.shape))
         obs = np.append(asks, bids, axis=0)
         obs = np.append(obs, recent_trades, axis=0)
-        obs = np.append(obs, indicators, axis=0)
-        obs = obs.reshape(list(obs.shape) + [1])
+        obs = obs.reshape((29, 60, 3))
         # obs = obs.reshape([1] + list(obs.shape))
         return np.asarray(obs, dtype=np.float)
 
