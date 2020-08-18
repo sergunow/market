@@ -7,134 +7,64 @@ import pandas as pd
 import math
 from scipy.stats import zscore
 
-states = list()
-recent_trades = list()
-asks = list()
-bids = list()
-
 
 class DataSimulator:
     def __init__(self, simulation=True, step=0):
         self.simulation = simulation
-        # self.state_id = 0
+        self.state_id = 0
         self.max_steps = 0
-        self.state_batches = list()
         self.states = list()
         self.recent_trades = list()
         self.asks = list()
         self.bids = list()
         self.current_step = step
-        self._connect()
         self.binance = BinanceReader()
         self.get_last_price()
-
-    def _connect(self):
-        self.con = psycopg2.connect(
-            database="orderbook",
-            user="postgres",
-            password="l82Z01vdQl",
-            host="127.0.0.1",
-            port="5432"
-        )
 
     def get_last_price(self):
         if self.simulation:
             if len(self.states) == 0:
-                self.get_batches()
-                cur = self.con.cursor()
-                sql = 'select * from states;'
-                cur.execute("ROLLBACK")
-                cur.execute(sql)
-                data = cur.fetchall()
-                data = np.asarray(data)
-                self.states = pd.DataFrame({'state_id': data[:, 0], 'price': data[:, 2]})
-            current_batch_id = self.state_batches.iloc[self.current_step]['batch_id']
-            state_id = self.state_batches[self.state_batches['batch_id'] == current_batch_id].sort_values(
-                by='state_id', ascending=False).iloc[0]['state_id']
-            return self.states[self.states['state_id'] == state_id].iloc[0]['price']
+                self.states = pd.read_csv('/home/sergunow/PycharmProjects/market visaul/simulator/states.csv')
+                self.max_steps = len(self.states)
+            self.state_id = self.states.iloc[self.current_step]['id']
+            return self.states.iloc[self.current_step]['price']
         else:
             return self.binance.get_last_price()
-
-    def get_batches(self):
-        if self.simulation:
-            if len(self.state_batches) == 0:
-                cur = self.con.cursor()
-                sql = 'select * from state_batches;'
-                cur.execute("ROLLBACK")
-                cur.execute(sql)
-                data = cur.fetchall()
-                data = np.asarray(data)
-                self.state_batches = pd.DataFrame({'state_id': data[:, 1], 'batch_id': data[:, 2]})
-                self.max_steps = len(self.state_batches['batch_id'].unique())
-            # self.state_id = self.state_batches[self.current_step][2]
 
     def get_previous_price(self):
         if self.simulation:
             if len(self.states) == 0:
-                self.get_batches()
-                cur = self.con.cursor()
-                sql = 'select * from states;'
-                cur.execute("ROLLBACK")
-                cur.execute(sql)
-                data = cur.fetchall()
-                data = np.asarray(data)
-                self.states = pd.DataFrame({'state_id': data[:, 0], 'price': data[:, 2]})
-            current_batch_id = self.state_batches.iloc[self.current_step]['batch_id']
-            state_id = self.state_batches[self.state_batches['batch_id'] == current_batch_id - 1].sort_values(
-                by='state_id', ascending=False).iloc[0]['state_id']
-            return self.states[self.states['state_id'] == state_id].iloc[0]['price']
+                self.states = pd.read_csv('/home/sergunow/PycharmProjects/market visaul/simulator/states.csv')
+                self.max_steps = len(self.states)
+            self.state_id = self.states.iloc[self.current_step - 1]['id']
+            return self.states.iloc[self.current_step - 1]['price']
         else:
             return self.binance.get_last_price()
 
     def get_recent_trades(self):
         if self.simulation:
             if len(self.recent_trades) == 0:
-                cur = self.con.cursor()
-                sql = 'select price, volume, type_transaction, state_id from time_and_sales;'
-                cur.execute("ROLLBACK")
-                cur.execute(sql)
-                data = np.asarray(cur.fetchall())
-                data = np.asarray(data)
-                self.recent_trades = pd.DataFrame(
-                    {'price': data[:, 0], 'volume': data[:, 1], 'type_transaction': data[:, 2], 'state_id': data[:, 3]})
+                self.recent_trades = pd.read_csv('/home/sergunow/PycharmProjects/market visaul/simulator/recent_trades.csv')
                 self.recent_trades[['price', 'volume']] = self.recent_trades[['price', 'volume']].apply(zscore)
-            current_batch_id = self.state_batches.iloc[self.current_step]['batch_id']
-            state_ids = np.asarray(
-                self.state_batches[self.state_batches['batch_id'] == current_batch_id]['state_id'])
-            return np.asarray(self.recent_trades[self.recent_trades['state_id'].isin(state_ids)][
-                                  ['price', 'volume', 'type_transaction']])
+            return np.asarray(self.recent_trades[self.recent_trades['state_id'] == self.state_id][
+                                  ['price', 'volume', 'isBuyerMaker']])
         else:
             return np.asarray(self.binance.get_recent_trades())
 
     def get_order_book(self):
         if self.simulation:
             if len(self.asks) == 0:
-                cur = self.con.cursor()
-                sql = 'select price, volume, state_id from asks;'
-                cur.execute("ROLLBACK")
-                cur.execute(sql)
-                data = cur.fetchall()
-                data = np.asarray(data)
-                self.asks = pd.DataFrame({'price': data[:, 0], 'volume': data[:, 1], 'state_id': data[:, 2]})
+                self.asks = pd.read_csv('/home/sergunow/PycharmProjects/market visaul/simulator/asks.csv')
                 self.asks[['price', 'volume']] = self.asks[['price', 'volume']].apply(zscore)
                 self.asks['type'] = 0
             if len(self.bids) == 0:
-                cur = self.con.cursor()
-                sql = 'select price, volume, state_id from bids;'
-                cur.execute("ROLLBACK")
-                cur.execute(sql)
-                data = cur.fetchall()
-                data = np.asarray(data)
-                self.bids = pd.DataFrame({'price': data[:, 0], 'volume': data[:, 1], 'state_id': data[:, 2]})
+                self.bids = pd.read_csv('/home/sergunow/PycharmProjects/market visaul/simulator/bids.csv')
                 self.bids[['price', 'volume']] = self.bids[['price', 'volume']].apply(zscore)
                 self.bids['type'] = 1
-            current_batch_id = self.state_batches.iloc[self.current_step]['batch_id']
-            state_ids = np.asarray(
-                self.state_batches[self.state_batches['batch_id'] == current_batch_id]['state_id'])
-            return np.asarray(self.asks[self.asks['state_id'].isin(state_ids)][['price', 'volume', 'type']]), np.asarray(
-                self.bids[self.bids['state_id'].isin(state_ids)][['price', 'volume', 'type']]), \
-                   self.asks[self.asks['state_id'].isin(state_ids)]['volume'].sum(), \
-                   self.bids[self.bids['state_id'].isin(state_ids)]['volume'].sum()
+            return np.asarray(self.asks[self.asks['state_id'] == self.state_id][['price', 'volume', 'type']]), \
+                   np.asarray(self.bids[self.bids['state_id'] == self.state_id][['price', 'volume', 'type']]), \
+                   self.asks[self.asks['state_id'] == self.state_id]['price'].sum(), \
+                   self.bids[self.bids['state_id'] == self.state_id]['price'].sum()
         else:
             return np.asarray(self.binance.get_order_book())
 
@@ -142,6 +72,10 @@ class DataSimulator:
 class Simulator:
     def __init__(self, simulation=True, step=0):
         self.DataSimulator = DataSimulator(simulation=simulation, step=step)
+        self.history = pd.DataFrame(
+            columns=['type', 'open_price', 'close_price', 'volume', 'profit', 'max_profit', 'max_down'])
+        self.active_trades = pd.DataFrame(
+            columns=['type', 'open_price', 'volume', 'profit', 'max_profit', 'max_down'])
         self.balance = 10000
         self.available_balance = self.balance
         self.initial_balance = self.balance
@@ -151,7 +85,7 @@ class Simulator:
         self.max_down = 0.0
         self.reward = 0.0
         self.current_price = 0.0
-        self.commission = Decimal(0.00075)
+        self.commission = 0.00075
         self.simulation = simulation
         self.current_step = step
         self.state_id = 0
@@ -160,181 +94,93 @@ class Simulator:
         self.recent_trades = list()
         self.asks = list()
         self.bids = list()
-        self._connect()
         self.reset()
         self.binance = BinanceReader()
         self.get_last_price()
-        self.get_account_info()
         self.history_id = 0
 
-    def _connect(self):
-        self.con = psycopg2.connect(
-            database="orderbook",
-            user="postgres",
-            password="l82Z01vdQl",
-            host="127.0.0.1",
-            port="5432"
-        )
-
     def reset(self):
-        cur = self.con.cursor()
-        sql = 'update accounts set balance = 10000, free_balance = 10000, profit = 0, count_trades = 0, max_down = 0, ' \
-              'max_profit = 0 where id = 1; '
-        cur.execute("ROLLBACK")
-        cur.execute(sql)
-        sql = 'TRUNCATE history;'
-        cur.execute("ROLLBACK")
-        cur.execute(sql)
-        sql = 'TRUNCATE active_trades;'
-        cur.execute("ROLLBACK")
-        cur.execute(sql)
+        self.balance = 10000
+        self.available_balance = 10000
+        self.profit = 0
+        self.count_trades = 0
+        self.max_down = 0
+        self.max_profit = 0
         self.reward = 0.0
 
     def add_trade_to_history(self, type, open_price, close_price, volume, profit, max_profit, max_down):
-        type = "'" + str(type) + "'"
-        cur = self.con.cursor()
-        sql = 'insert into history (type, open_price, close_price, volume, profit, max_profit, max_down) ' \
-              'VALUES (' + str(type) + ', ' + str(open_price) + ', ' + str(close_price) + ', ' + str(volume) \
-              + ', ' + str(profit) + ', ' + str(max_profit) + ', ' + str(max_down) + ');'
-        cur.execute("ROLLBACK")
-        cur.execute(sql)
+        self.history = self.history.append(
+            {'type': str(type), 'open_price': open_price, 'close_price': close_price, 'volume': volume,
+             'profit': profit, 'max_profit': max_profit,
+             'max_down': max_down}, ignore_index=True)
 
     def get_history(self):
-        cur = self.con.cursor()
-        sql = 'select id, profit, max_profit, max_down, open_price, volume from history order by id desc limit 20;'
-        cur.execute("ROLLBACK")
-        cur.execute(sql)
-        return cur.fetchall()
+        return self.history.tail(20)
 
     def get_award(self, profit):
         history = self.get_history()
         if len(history) > 0:
-            # relative_profits = list()
-            # for item in history:
-            #     cost = item[4] * item[5] + item[4] * item[5] * self.commission
-            #     relative_profits.append(((cost + item[1]) - cost) / cost + 1)
-            # relative_profits = np.asarray(relative_profits, dtype=np.float)
-            # ahpr = np.average(relative_profits)
-            # varience = np.var(relative_profits)
-            # self.reward = math.sqrt(ahpr**2 - varience)
             count_positive = 0
             profit = 0.0
             count_negative = 0
             loss = 0.0
-            for item in history:
-                if item[1] > 0:
+            for i in range(len(history)):
+                if history.iloc[i]['profit'] > 0:
                     count_positive += 1
-                    profit += float(item[1])
+                    profit += history.iloc[i]['profit']
                 else:
                     count_negative += 1
-                    loss += float(item[1])
+                    loss += history.iloc[i]['profit']
             self.reward = (count_positive / len(history)) * profit + (count_negative / len(history)) * loss
 
-    def get_account_info(self):
-        cur = self.con.cursor()
-        sql = 'select * from accounts where id = 1;'
-        cur.execute(sql)
-        data = cur.fetchall()[0]
-        self.balance = data[1]
-        self.available_balance = data[2]
-        self.profit = data[3]
-        self.count_trades = data[4]
-        self.max_down = data[5]
-        self.max_profit = data[6]
-
     def update_transactions(self, active_trades, last_price):
-        for item in active_trades:
-            if item[1] == 'long':
-                profit = (last_price - item[2]) * item[3]
-                max_profit = item[5]
-                max_down = item[6]
+        for i in range(len(active_trades)):
+            if active_trades.iloc[i]['type'] == 'long':
+                profit = (last_price - active_trades.iloc[i]['open_price']) * active_trades.iloc[i]['volume']
+                max_profit = active_trades.iloc[i]['max_profit']
+                max_down = active_trades.iloc[i]['max_down']
                 if profit > max_profit:
                     max_profit = profit
                 if profit < max_down:
                     max_down = profit
-                # if profit < -2:
-                #     self.close_long()
-                cur = self.con.cursor()
-                sql = 'update active_trades set profit = {0}, max_profit = {1}, max_down = {2} where id = {3};'. \
-                    format(profit, max_profit, max_down, item[0])
-                cur.execute(sql)
-            if item[1] == 'short':
-                max_profit = item[5]
-                max_down = item[6]
-                profit = - (last_price - item[2]) * item[3]
+                self.active_trades.iloc[i, self.active_trades.columns.get_loc('profit')] = profit
+                self.active_trades.iloc[i, self.active_trades.columns.get_loc('max_profit')] = max_profit
+                self.active_trades.iloc[i, self.active_trades.columns.get_loc('max_down')] = max_down
+            if active_trades.iloc[i]['type'] == 'short':
+                max_profit = active_trades.iloc[i]['max_profit']
+                max_down = active_trades.iloc[i]['max_down']
+                profit = - (last_price - active_trades.iloc[i]['open_price']) * active_trades.iloc[i]['volume']
                 if profit > max_profit:
                     max_profit = profit
                 if profit < max_down:
                     max_down = profit
-                # if profit < -2:
-                #     self.close_short()
-                cur = self.con.cursor()
-                sql = 'update active_trades set profit = {0}, max_profit = {1}, max_down = {2} where id = {3};' \
-                    .format(profit, max_profit, max_down, item[0])
-                cur.execute(sql)
+                self.active_trades.iloc[i, self.active_trades.columns.get_loc('profit')] = profit
+                self.active_trades.iloc[i, self.active_trades.columns.get_loc('max_profit')] = max_profit
+                self.active_trades.iloc[i, self.active_trades.columns.get_loc('max_down')] = max_down
 
     def update_account(self):
         active_trades = self.get_active_trades()
         last_price = self.get_last_price()
         self.update_transactions(active_trades, last_price)
-        all_long_cost = Decimal(0.0)
-        all_short_cost = Decimal(0.0)
-        for item in active_trades:
-            if item[1] == 'long':
-                all_long_cost = all_long_cost + item[2] * item[3] + (
-                        last_price - item[2]) * item[3]
-            if item[1] == 'short':
-                all_short_cost = all_short_cost + item[2] * item[3] + (
-                        item[2] - last_price) * item[3]
+        all_long_cost = 0.0
+        all_short_cost = 0.0
+        for i in range(len(active_trades)):
+            if active_trades.iloc[i]['type'] == 'long':
+                all_long_cost = all_long_cost + active_trades.iloc[i]['open_price'] * active_trades.iloc[i]['volume'] \
+                                + (last_price - active_trades.iloc[i]['open_price']) * active_trades.iloc[i]['volume']
+            if active_trades.iloc[i]['type'] == 'short':
+                all_short_cost = all_short_cost + active_trades.iloc[i]['open_price'] * active_trades.iloc[i]['volume']\
+                                 + (active_trades.iloc[i]['open_price'] - last_price) * active_trades.iloc[i]['volume']
         self.balance = self.available_balance + all_short_cost + all_long_cost
         self.profit = self.balance - self.initial_balance
 
-        cur = self.con.cursor()
-        sql = 'update accounts set balance = {0}, free_balance = {1}, profit = {2}, count_trades = {3}, ' \
-              'max_down = {4}, max_profit = {5} where id = 1;'.format(
-            self.balance, self.available_balance, self.profit, self.count_trades, self.max_down, self.max_profit)
-        cur.execute(sql)
-
-    def get_active_trades(self, profit=True):
-        sort = ''
-        if profit:
-            sort = 'desc'
-        cur = self.con.cursor()
-        sql = 'select * from active_trades order by profit {0};'.format(sort)
-        cur.execute(sql)
-        return cur.fetchall()
-
-    def get_max_short_and_long(self):
-        max_long = 0.0
-        max_short = 0.0
-
-        cur = self.con.cursor()
-        sql = 'select * from active_trades where type = {0} order by profit desc;'.format("'long'")
-        cur.execute(sql)
-        longs = cur.fetchall()
-        if len(longs) > 0:
-            max_long = longs[0][4]
-        cur = self.con.cursor()
-        sql = 'select * from active_trades where type = {0} order by profit desc;'.format("'short'")
-        cur.execute(sql)
-        shorts = cur.fetchall()
-        if len(shorts) > 0:
-            max_short = shorts[0][4]
-        return max_long, max_long
+    def get_active_trades(self, profit_sort=True):
+        if profit_sort:
+            return self.active_trades.sort_values(by='profit', ascending=False)
+        else:
+            return self.active_trades.sort_values(by='profit', ascending=True)
 
     def get_last_price(self):
-        # if self.simulation:
-        #     if len(self.states) == 0:
-        #         cur = self.con.cursor()
-        #         sql = 'select * from states;'
-        #         cur.execute("ROLLBACK")
-        #         cur.execute(sql)
-        #         self.states = cur.fetchall()
-        #         self.max_steps = len(self.states)
-        #     self.state_id = self.states[self.current_step][0]
-        #     return self.states[self.current_step][2]
-        # else:
-        #     return self.binance.get_last_price()
         return self.DataSimulator.get_last_price()
 
     def get_previous_price(self):
@@ -342,157 +188,82 @@ class Simulator:
 
     def get_recent_trades(self):
         return self.DataSimulator.get_recent_trades()
-        # if self.simulation:
-        #     if len(self.recent_trades) == 0:
-        #         cur = self.con.cursor()
-        #         sql = 'select price, volume, type_transaction, state_id from time_and_sales;'
-        #         cur.execute("ROLLBACK")
-        #         cur.execute(sql)
-        #         data = np.asarray(cur.fetchall())
-        #         dict = {}
-        #         i = 0
-        #         for item in data:
-        #             dict[i] = {
-        #                 'price': item[0],
-        #                 'volume': item[1],
-        #                 'isBuyerMaker': item[2],
-        #                 'state_id': item[3]
-        #             }
-        #             i += 1
-        #         self.recent_trades = pd.DataFrame.from_dict(dict, 'index')
-        #     return np.asarray(self.recent_trades[self.recent_trades['state_id'] == self.state_id][
-        #                           ['price', 'volume', 'isBuyerMaker']])
-        # else:
-        #     return np.asarray(self.binance.get_recent_trades())
 
     def get_order_book(self):
         return self.DataSimulator.get_order_book()
-        # if self.simulation:
-        #     if len(self.asks) == 0:
-        #         cur = self.con.cursor()
-        #         sql = 'select price, volume, state_id from asks;'
-        #         cur.execute("ROLLBACK")
-        #         cur.execute(sql)
-        #         data = cur.fetchall()
-        #         dict = {}
-        #         i = 0
-        #         for item in data:
-        #             dict[i] = {
-        #                 'price': item[0],
-        #                 'volume': item[1],
-        #                 'state_id': item[2]
-        #             }
-        #             i += 1
-        #         self.asks = pd.DataFrame.from_dict(dict, 'index')
-        #     if len(self.bids) == 0:
-        #         cur = self.con.cursor()
-        #         sql = 'select price, volume, state_id from bids;'
-        #         cur.execute("ROLLBACK")
-        #         cur.execute(sql)
-        #         data = cur.fetchall()
-        #         dict = {}
-        #         i = 0
-        #         for item in data:
-        #             dict[i] = {
-        #                 'price': item[0],
-        #                 'volume': item[1],
-        #                 'state_id': item[2]
-        #             }
-        #             i += 1
-        #         self.bids = pd.DataFrame.from_dict(dict, 'index')
-        #     return np.asarray(self.asks[self.asks['state_id'] == self.state_id][['price', 'volume']]), \
-        #            np.asarray(self.bids[self.bids['state_id'] == self.state_id][['price', 'volume']])
-        # else:
-        #     return np.asarray(self.binance.get_order_book())
 
     def long(self, volume):
-        self.get_account_info()
+        self.update_account()
         last_price = self.get_last_price()
         trade_cost = (last_price * volume) + (last_price * volume) * self.commission
-        transaction_type = "'long'"
         if self.available_balance >= trade_cost:
-            cur = self.con.cursor()
-            sql = 'insert into active_trades (type, open_price, volume, profit, max_profit, max_down) ' \
-                  'VALUES ({0}, {1}, {2}, {3}, {4}, {5});'.format(transaction_type, last_price, volume, 0.0, 0.0, 0.0)
-            cur.execute("ROLLBACK")
-            cur.execute(sql)
-
+            self.active_trades = self.active_trades.append(
+                {'type': 'long', 'open_price': last_price, 'volume': volume, 'profit': 0.0, 'max_profit': 0.0,
+                 'max_down': 0.0}, ignore_index=True)
             self.available_balance -= trade_cost
             self.count_trades += 1
             self.update_account()
 
-    def close_long(self, profit=True):
-        self.get_account_info()
+    def close_long(self, profit_sort=True):
+        self.update_account()
         last_price = self.get_last_price()
-        active_trades = self.get_active_trades(profit)
-        long_cost = Decimal(0.0)
+        active_trades = self.get_active_trades(profit_sort)
+        long_cost = 0.0
         long_positions = list()
-        for item in active_trades:
-            if item[1] == 'long':
-                long_positions.append(item)
+        for i in range(len(active_trades)):
+            if active_trades.iloc[i]['type'] == 'long':
+                long_positions.append(active_trades.iloc[i])
         if len(long_positions) != 0:
             close_trade = long_positions[0]
-            long_cost = long_cost + close_trade[2] * close_trade[3] + (
-                    last_price - close_trade[2]) * close_trade[3]
-            profit = (last_price - close_trade[2]) * close_trade[3]
-            commission = (last_price * close_trade[3]) * self.commission
-            commission_open_trade = (close_trade[2] * close_trade[3]) * self.commission
+            long_cost = long_cost + close_trade['open_price'] * close_trade['volume'] + (
+                    last_price - close_trade['open_price']) * close_trade['volume']
+            profit = (last_price - close_trade['open_price']) * close_trade['volume']
+            commission = (last_price * close_trade['volume']) * self.commission
+            commission_open_trade = (close_trade['open_price'] * close_trade['volume']) * self.commission
             self.available_balance += long_cost - commission
-            cur = self.con.cursor()
-            sql = 'delete from active_trades where id = {0};'.format(close_trade[0])
-            cur.execute("ROLLBACK")
-            cur.execute(sql)
+            self.active_trades = self.active_trades.drop(close_trade.name)
             self.count_trades += 1
             self.update_account()
-            if close_trade[5] == 0:
-                a = 1
-            self.add_trade_to_history('long', close_trade[2], last_price, close_trade[3],
+            self.add_trade_to_history('long', close_trade['open_price'], last_price, close_trade['volume'],
                                       profit - (commission + commission_open_trade),
-                                      close_trade[5] - (commission + commission_open_trade),
-                                      close_trade[6] - (commission + commission_open_trade))
+                                      close_trade['profit'] - (commission + commission_open_trade),
+                                      close_trade['max_profit'] - (commission + commission_open_trade))
             self.get_award(profit - (commission + commission_open_trade))
 
     def close_short(self, profit=True):
-        self.get_account_info()
+        self.update_account()
         last_price = self.get_last_price()
         active_trades = self.get_active_trades(profit)
-        short_cost = Decimal(0.0)
+        short_cost = 0.0
         short_positions = list()
-        for item in active_trades:
-            if item[1] == 'short':
-                short_positions.append(item)
+        for i in range(len(active_trades)):
+            if active_trades.iloc[i]['type'] == 'short':
+                short_positions.append(active_trades.iloc[i])
         if len(short_positions) != 0:
             close_trade = short_positions[0]
-            short_cost = short_cost + close_trade[2] * close_trade[3] + (
-                    close_trade[2] - last_price) * close_trade[3]
-            profit = -(last_price - close_trade[2]) * close_trade[3]
-            commission = (last_price * close_trade[3]) * self.commission
-            commission_open_trade = (close_trade[2] * close_trade[3]) * self.commission
+            short_cost = short_cost + close_trade['open_price'] * close_trade['volume'] + (
+                    close_trade['open_price'] - last_price) * close_trade['volume']
+            profit = -(last_price - close_trade['open_price']) * close_trade['volume']
+            commission = (last_price * close_trade['volume']) * self.commission
+            commission_open_trade = (close_trade['open_price'] * close_trade['volume']) * self.commission
             self.available_balance += short_cost - commission
-            cur = self.con.cursor()
-            sql = 'delete from active_trades where id = {0};'.format(close_trade[0])
-            cur.execute("ROLLBACK")
-            cur.execute(sql)
+            self.active_trades = self.active_trades.drop(close_trade.name)
             self.count_trades += 1
             self.update_account()
-            self.add_trade_to_history('short', close_trade[2], last_price, close_trade[3],
+            self.add_trade_to_history('short', close_trade['open_price'], last_price, close_trade['volume'],
                                       profit - (commission + commission_open_trade),
-                                      close_trade[5] - (commission + commission_open_trade),
-                                      close_trade[6] - (commission + commission_open_trade))
+                                      close_trade['profit'] - (commission + commission_open_trade),
+                                      close_trade['max_profit'] - (commission + commission_open_trade))
             self.get_award(profit - (commission + commission_open_trade))
 
     def short(self, volume):
-        self.get_account_info()
+        self.update_account()
         last_price = self.get_last_price()
         trade_cost = (last_price * volume) + (last_price * volume) * self.commission
-        transaction_type = "'short'"
         if self.available_balance >= trade_cost:
-            cur = self.con.cursor()
-            sql = 'insert into active_trades (type, open_price, volume, profit, max_profit, max_down) ' \
-                  'VALUES ({0}, {1}, {2}, {3}, {4}, {5});'.format(transaction_type, last_price, volume, 0.0, 0.0, 0.0)
-            cur.execute("ROLLBACK")
-            cur.execute(sql)
-
+            self.active_trades = self.active_trades.append(
+                {'type': 'short', 'open_price': last_price, 'volume': volume, 'profit': 0.0, 'max_profit': 0.0,
+                 'max_down': 0.0}, ignore_index=True)
             self.available_balance -= trade_cost
             self.count_trades += 1
             self.update_account()
@@ -502,9 +273,9 @@ class Simulator:
         twr = 0.0
         if len(history) > 5:
             twr = 1.0
-            max_down = float(self.get_max_down_trade()[0][2])
-            for item in history:
-                twr = twr * (1 + f * (float(-item[1])) / max_down)
+            max_down = history.sort_values(by='max_down', ascending=False).iloc[0]['max_down']
+            for i in range(len(history)):
+                twr = twr * (1 + f * (-history.iloc[i]['profit']) / max_down)
         return twr
 
     def get_optimal_f(self):
@@ -517,18 +288,11 @@ class Simulator:
                 optimal_f = i
         return optimal_f
 
-    def get_max_down_trade(self):
-        cur = self.con.cursor()
-        sql = 'select id, profit, max_profit, max_down from history order by profit limit 1;'
-        cur.execute("ROLLBACK")
-        cur.execute(sql)
-        return cur.fetchall()
-
     def get_volume(self):
         f = self.get_optimal_f()
         history = self.get_history()
         if f != 0.0 and len(history) > 5:
-            max_down = float(self.get_max_down_trade()[0][2])
+            max_down = history.sort_values(by='max_down', ascending=False).iloc[0]['max_down']
             return float(float(self.balance) / (max_down / (- 1 * f))) / 1000.00
         else:
             return 1

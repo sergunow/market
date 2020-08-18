@@ -19,27 +19,28 @@ class BinanceEnv(gym.Env):
         super(BinanceEnv, self).__init__()
         self.action_space = spaces.Discrete(7)
         self.observation_space = spaces.Box(low=0, high=1,
-                                            shape=(29, 60, 3), dtype=np.float16)
+                                            shape=(183,), dtype=np.float16)
         self.binance = BinanceReader()
         self.simulator = Simulator()
         self.current_step = 0
         self.initial_step = 0
         self.last_price = 0.0
         self.previous_price = 0.0
-        self.is_testing = True
+        self.is_testing = False
 
     def next_observation(self):
+        # Get the stock data points for the last 5 days and scale to between 0-1
         asks, bids, sum_asks, sum_bids = self.simulator.get_order_book()
         recent_trades = self.simulator.get_recent_trades()
         self.last_price = self.simulator.get_last_price()
         self.previous_price = self.simulator.get_previous_price()
-        # indicators = np.asarray([sum_asks, sum_bids, ((self.last_price - self.previous_price) / self.previous_price)],
-        #                         dtype=np.float)
-        # indicators = indicators.reshape([1] + list(indicators.shape))
-        # indicators = indicators.reshape([1] + list(indicators.shape))
+        indicators = np.asarray([sum_asks, sum_bids, ((self.last_price - self.previous_price) / self.previous_price)],
+                                dtype=np.float)
+        indicators = indicators.reshape([1] + list(indicators.shape))
         obs = np.append(asks, bids, axis=0)
         obs = np.append(obs, recent_trades, axis=0)
-        obs = obs.reshape((29, 60, 3))
+        obs = np.append(obs, indicators, axis=0)
+        obs = obs.flatten()
         # obs = obs.reshape([1] + list(obs.shape))
         return np.asarray(obs, dtype=np.float)
 
@@ -48,7 +49,7 @@ class BinanceEnv(gym.Env):
         if self.is_testing:
             self.current_step = 70000
         else:
-            self.current_step = random.randint(0, int(self.simulator.DataSimulator.max_steps / 1.3))
+            self.current_step = random.randint(1, int(self.simulator.DataSimulator.max_steps / 2))
         self.simulator.DataSimulator.current_step = self.current_step
         self.initial_step = self.current_step
         return self.next_observation()
@@ -57,14 +58,14 @@ class BinanceEnv(gym.Env):
         # Set the current price to a random price within the time step
         # print('\n action = ', action_type)
         if action_type == 0:
-            volume = Decimal(abs(self.simulator.get_volume()))
+            volume = abs(self.simulator.get_volume())
             self.simulator.long(volume)
         elif action_type == 1:
             self.simulator.close_long(True)
         elif action_type == 2:
             self.simulator.close_long(False)
         elif action_type == 3:
-            volume = Decimal(abs(self.simulator.get_volume()))
+            volume = abs(self.simulator.get_volume())
             self.simulator.short(volume)
         elif action_type == 4:
             self.simulator.close_short(True)
@@ -75,6 +76,7 @@ class BinanceEnv(gym.Env):
     def render(self, mode='human', close=False):
         # Render the environment to the screen
         self.simulator.update_account()
+        print(f'Step: {self.simulator.DataSimulator.state_id}')
         print(f'Step: {self.current_step}')
         print(f'Current price: {self.last_price}')
         print(f'Balance: {self.simulator.balance}')
