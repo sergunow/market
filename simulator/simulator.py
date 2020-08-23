@@ -19,6 +19,8 @@ class DataSimulator:
         self.bids = list()
         self.current_step = step
         self.binance = BinanceReader()
+        self.last_price = 0.0
+        self.previous_price = self.last_price
         self.get_last_price()
 
     def get_last_price(self):
@@ -27,46 +29,79 @@ class DataSimulator:
                 self.states = pd.read_csv('/home/sergunow/PycharmProjects/market visaul/simulator/states.csv')
                 self.max_steps = len(self.states)
             self.state_id = self.states.iloc[self.current_step]['id']
-            return self.states.iloc[self.current_step]['price']
+            self.previous_price = self.last_price
+            self.last_price = self.states.iloc[self.current_step]['price']
+            if self.previous_price == 0.0:
+                self.previous_price = self.last_price
+            return self.last_price
         else:
-            return self.binance.get_last_price()
+            self.previous_price = self.last_price
+            self.last_price = self.binance.get_last_price()
+            if self.previous_price == 0:
+                self.previous_price = self.last_price
+            return self.last_price
 
     def get_previous_price(self):
-        if self.simulation:
-            if len(self.states) == 0:
-                self.states = pd.read_csv('/home/sergunow/PycharmProjects/market visaul/simulator/states.csv')
-                self.max_steps = len(self.states)
-            self.state_id = self.states.iloc[self.current_step - 1]['id']
-            return self.states.iloc[self.current_step - 1]['price']
-        else:
-            return self.binance.get_last_price()
+        return self.previous_price
 
     def get_recent_trades(self):
         if self.simulation:
             if len(self.recent_trades) == 0:
-                self.recent_trades = pd.read_csv('/home/sergunow/PycharmProjects/market visaul/simulator/recent_trades.csv')
-                self.recent_trades[['price', 'volume']] = self.recent_trades[['price', 'volume']].apply(zscore)
-            return np.asarray(self.recent_trades[self.recent_trades['state_id'] == self.state_id][
-                                  ['price', 'volume', 'isBuyerMaker']])
+                self.recent_trades = pd.read_csv(
+                    '/home/sergunow/PycharmProjects/market visaul/simulator/recent_trades.csv')
+                self.recent_trades[['volume']] = self.recent_trades[['volume']].apply(zscore)
+            data = self.recent_trades[self.recent_trades['state_id'] == self.state_id]
+            return np.asarray(data[['volume', 'type_transaction']]), data[data['type_transaction'] == 0][
+                'volume'].sum(), data[data['type_transaction'] == 1]['volume'].sum()
         else:
-            return np.asarray(self.binance.get_recent_trades())
+            if len(self.recent_trades) == 0:
+                self.recent_trades = pd.read_csv(
+                    '/home/sergunow/PycharmProjects/market visaul/simulator/recent_trades.csv')
+            mean_price = np.asarray(self.recent_trades['price']).mean()
+            std_price = np.asarray(self.recent_trades['price']).std()
+            # mean_volume = np.asarray(self.recent_trades['volume']).mean()
+            # std_volume = np.asarray(self.recent_trades['volume']).std()
+            data = self.binance.get_recent_trades()
+            data['price'] = data['price'].apply(lambda x: (x - mean_price) / std_price)
+            # data['volume'] = data['volume'].apply(lambda x: (x - mean_volume) / std_volume)
+            return np.asarray(data[['volume', 'type_transaction']]), data[data['type_transaction'] == 0][
+                'volume'].sum(), data[data['type_transaction'] == 1]['volume'].sum()
 
     def get_order_book(self):
         if self.simulation:
             if len(self.asks) == 0:
                 self.asks = pd.read_csv('/home/sergunow/PycharmProjects/market visaul/simulator/asks.csv')
-                self.asks[['price', 'volume']] = self.asks[['price', 'volume']].apply(zscore)
+                self.asks[['volume']] = self.asks[['volume']].apply(zscore)
                 self.asks['type'] = 0
             if len(self.bids) == 0:
                 self.bids = pd.read_csv('/home/sergunow/PycharmProjects/market visaul/simulator/bids.csv')
-                self.bids[['price', 'volume']] = self.bids[['price', 'volume']].apply(zscore)
+                self.bids[['volume']] = self.bids[['volume']].apply(zscore)
                 self.bids['type'] = 1
-            return np.asarray(self.asks[self.asks['state_id'] == self.state_id][['price', 'volume', 'type']]), \
-                   np.asarray(self.bids[self.bids['state_id'] == self.state_id][['price', 'volume', 'type']]), \
-                   self.asks[self.asks['state_id'] == self.state_id]['price'].sum(), \
-                   self.bids[self.bids['state_id'] == self.state_id]['price'].sum()
+            return np.asarray(self.asks[self.asks['state_id'] == self.state_id][['volume', 'type']]), \
+                   np.asarray(self.bids[self.bids['state_id'] == self.state_id][['volume', 'type']]), \
+                   self.asks[self.asks['state_id'] == self.state_id]['volume'].sum(), \
+                   self.bids[self.bids['state_id'] == self.state_id]['volume'].sum()
         else:
-            return np.asarray(self.binance.get_order_book())
+            if len(self.asks) == 0:
+                self.asks = pd.read_csv('/home/sergunow/PycharmProjects/market visaul/simulator/asks.csv')
+                self.asks['type'] = 0
+            if len(self.bids) == 0:
+                self.bids = pd.read_csv('/home/sergunow/PycharmProjects/market visaul/simulator/bids.csv')
+                self.bids['type'] = 1
+            asks_mean_price = np.asarray(self.asks['price']).mean()
+            asks_std_price = np.asarray(self.asks['price']).std()
+            asks_mean_volume = np.asarray(self.asks['volume']).mean()
+            asks_std_volume = np.asarray(self.asks['volume']).std()
+            bids_mean_price = np.asarray(self.bids['price']).mean()
+            bids_std_price = np.asarray(self.bids['price']).std()
+            bids_mean_volume = np.asarray(self.bids['volume']).mean()
+            bids_std_volume = np.asarray(self.bids['volume']).std()
+            asks, bids = self.binance.get_order_book()
+            asks['price'] = asks['price'].apply(lambda x: (x - asks_mean_price) / asks_std_price)
+            asks['volume'] = asks['volume'].apply(lambda x: (x - asks_mean_volume) / asks_std_volume)
+            bids['price'] = bids['price'].apply(lambda x: (x - bids_mean_price) / bids_std_price)
+            bids['volume'] = bids['volume'].apply(lambda x: (x - bids_mean_volume) / bids_std_volume)
+            return np.asarray(asks), np.asarray(bids), asks['volume'].sum(), bids['volume'].sum()
 
 
 class Simulator:
@@ -169,10 +204,14 @@ class Simulator:
                 all_long_cost = all_long_cost + active_trades.iloc[i]['open_price'] * active_trades.iloc[i]['volume'] \
                                 + (last_price - active_trades.iloc[i]['open_price']) * active_trades.iloc[i]['volume']
             if active_trades.iloc[i]['type'] == 'short':
-                all_short_cost = all_short_cost + active_trades.iloc[i]['open_price'] * active_trades.iloc[i]['volume']\
+                all_short_cost = all_short_cost + active_trades.iloc[i]['open_price'] * active_trades.iloc[i]['volume'] \
                                  + (active_trades.iloc[i]['open_price'] - last_price) * active_trades.iloc[i]['volume']
         self.balance = self.available_balance + all_short_cost + all_long_cost
         self.profit = self.balance - self.initial_balance
+        if self.profit > self.max_profit:
+            self.max_profit = self.profit
+        if self.profit < self.max_down:
+            self.max_down = self.profit
 
     def get_active_trades(self, profit_sort=True):
         if profit_sort:
@@ -271,7 +310,7 @@ class Simulator:
     def get_twr(self, f):
         history = self.get_history()
         twr = 0.0
-        if len(history) > 5:
+        if len(history) > 20:
             twr = 1.0
             max_down = history.sort_values(by='max_down', ascending=False).iloc[0]['max_down']
             for i in range(len(history)):
@@ -291,7 +330,7 @@ class Simulator:
     def get_volume(self):
         f = self.get_optimal_f()
         history = self.get_history()
-        if f != 0.0 and len(history) > 5:
+        if f != 0.0 and len(history) > 20:
             max_down = history.sort_values(by='max_down', ascending=False).iloc[0]['max_down']
             return float(float(self.balance) / (max_down / (- 1 * f))) / 1000.00
         else:

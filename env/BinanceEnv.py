@@ -5,7 +5,7 @@ from gym import spaces
 import pandas as pd
 import numpy as np
 from decimal import Decimal
-
+from datetime import datetime
 from binance_data import BinanceReader
 import math
 
@@ -18,40 +18,51 @@ class BinanceEnv(gym.Env):
     def __init__(self):
         super(BinanceEnv, self).__init__()
         self.action_space = spaces.Discrete(7)
-        self.observation_space = spaces.Box(low=0, high=1,
-                                            shape=(183,), dtype=np.float16)
+        self.observation_space = spaces.Box(low=-10, high=10,
+                                            shape=(125,), dtype=np.float16)
+        self.is_simulation = True
         self.binance = BinanceReader()
-        self.simulator = Simulator()
+        self.simulator = Simulator(simulation=self.is_simulation)
         self.current_step = 0
         self.initial_step = 0
         self.last_price = 0.0
         self.previous_price = 0.0
         self.is_testing = False
+        self.start_time = datetime.now()
 
     def next_observation(self):
         # Get the stock data points for the last 5 days and scale to between 0-1
         asks, bids, sum_asks, sum_bids = self.simulator.get_order_book()
-        recent_trades = self.simulator.get_recent_trades()
+        recent_trades, sum_buy, sum_sell = self.simulator.get_recent_trades()
+        if recent_trades.shape[0] < 20:
+            recent_trades = np.append(recent_trades, np.zeros((20 - recent_trades.shape[0], 2)), axis=0)
+        if asks.shape[0] < 20:
+            asks = np.append(asks, np.zeros((20 - asks.shape[0], 2)), axis=0)
+        if bids.shape[0] < 20:
+            bids = np.append(bids, np.zeros((20 - bids.shape[0], 2)), axis=0)
         self.last_price = self.simulator.get_last_price()
         self.previous_price = self.simulator.get_previous_price()
-        indicators = np.asarray([sum_asks, sum_bids, ((self.last_price - self.previous_price) / self.previous_price)],
-                                dtype=np.float)
-        indicators = indicators.reshape([1] + list(indicators.shape))
-        obs = np.append(asks, bids, axis=0)
-        obs = np.append(obs, recent_trades, axis=0)
-        obs = np.append(obs, indicators, axis=0)
-        obs = obs.flatten()
-        # obs = obs.reshape([1] + list(obs.shape))
+        indicators = np.asarray(
+            [sum_asks, sum_bids, ((self.last_price - self.previous_price) / self.previous_price), sum_buy, sum_sell],
+            dtype=np.float)
+        obs = np.append(asks, bids)
+        obs = np.append(obs, recent_trades)
+        obs = np.append(obs, indicators)
+        if obs.shape[0] < 125:
+            obs = np.append(obs, np.zeros((125 - obs.shape[0])))
         return np.asarray(obs, dtype=np.float)
 
     def reset(self):
         self.simulator = Simulator()
-        if self.is_testing:
-            self.current_step = 70000
+        if self.is_simulation:
+            if self.is_testing:
+                self.current_step = 197932
+            else:
+                self.current_step = random.randint(0, self.simulator.DataSimulator.max_steps - 10000)
+            self.simulator.DataSimulator.current_step = self.current_step
+            self.initial_step = self.current_step
         else:
-            self.current_step = random.randint(1, int(self.simulator.DataSimulator.max_steps / 2))
-        self.simulator.DataSimulator.current_step = self.current_step
-        self.initial_step = self.current_step
+            self.current_step = 0
         return self.next_observation()
 
     def _take_action(self, action_type):
@@ -89,7 +100,11 @@ class BinanceEnv(gym.Env):
     def step(self, action):
         # Execute one time step within the environment
         self._take_action(action)
-
+        if self.current_step - self.initial_step == 0:
+            self.start_time = datetime.now()
+        if self.current_step % 1000 == 0:
+            print(datetime.now() - self.start_time)
+            self.start_time = datetime.now()
         self.current_step += 1
         self.simulator.DataSimulator.current_step += 1
         reward = float(self.simulator.reward)

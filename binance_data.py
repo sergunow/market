@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from decimal import Decimal
 
+
 class BinanceReader:
     def __init__(self):
         try:
@@ -22,7 +23,7 @@ class BinanceReader:
                 data = self.client.get_ticker(symbol='BNBUSDT')
             except Exception:
                 continue
-            return Decimal(data['lastPrice'])
+            return float(data['lastPrice'])
 
     def get_order_book(self):
         data = {}
@@ -31,7 +32,11 @@ class BinanceReader:
                 data = self.client.get_order_book(symbol='BNBUSDT', limit=20)
             except Exception:
                 continue
-            return data['asks'], data['bids']
+            asks = pd.DataFrame(
+                {'price': np.asarray(data['asks'])[:, 0].astype(float), 'volume': np.asarray(data['asks'])[:, 1].astype(float), 'type': 0})
+            bids = pd.DataFrame(
+                {'price': np.asarray(data['bids'])[:, 0].astype(float), 'volume': np.asarray(data['bids'])[:, 1].astype(float), 'type': 1})
+            return asks, bids
 
     def get_recent_trades(self):
         data = {}
@@ -44,10 +49,9 @@ class BinanceReader:
             i = 0
             for item in data:
                 dict[i] = {
-                    'price': item['price'],
-                    'volume': item['qty'],
-                    'isBuyerMaker': item['isBuyerMaker']
+                    'price': float(item['price']),
+                    'volume': float(item['qty']),
+                    'isBuyerMaker': int(item['isBuyerMaker'])
                 }
                 i += 1
-            data = pd.DataFrame.from_dict(dict, 'index')
-            return np.asarray(data)
+            return pd.DataFrame.from_dict(dict, 'index')
